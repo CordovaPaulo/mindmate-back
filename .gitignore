@@ -1,0 +1,81 @@
+# Node modules
+/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment / secrets
+.env
+.env.*          # ignore env variants (e.g. .env.local, .env.production)
+!.env.example   # keep example if you provide one
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Runtime files / pids
+pids/
+*.pid
+*.seed
+
+# Build / output folders
+dist/
+build/
+.next/
+out/
+coverage/
+.nyc_output/
+reports/
+
+# Temp and cache
+tmp/
+temp/
+.cache/
+.parcel-cache/
+*.tmp
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-*
+.history/
+
+# Uploaded files / attachments (adjust if you store uploads in a different folder)
+uploads/
+public/uploads/
+tmp_uploads/
+
+# Secrets & credentials
+*.pem
+*.key
+*.p12
+*.crt
+credentials.json
+service-account*.json
+google-credentials*.json
+drive-token*.json
+
+# Cloudinary / drive / token files
+*.json
+*.env.local
+
+# PM2
+pm2.pid
+pm2.log
+pids/
+
+# Misc
+*.tgz
+*.zip
+*.gz
+
+# Ensure package-lock or yarn lock is kept in repo (remove the next lines if you want locks tracked)
+# package-lock.json
+# yarn.lock
