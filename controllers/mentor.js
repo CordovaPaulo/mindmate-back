@@ -595,7 +595,13 @@ exports.getReviewer = async (req, res) => {
         // Safe award badges
         await safeAwardMentorBadgesByUserId(decoded.id);
 
-        res.status(200).json({ reviewer: learner.reviewer });
+        // Return the actual learner data that the frontend needs
+        res.status(200).json({ 
+            name: learner.name,
+            course: learner.program,
+            year: learner.yearLevel,
+            image: learner.image || ''
+        });
     } catch (error) {
         console.error('Error in getReviewer:', error);
         res.status(500).json({ message: error.message, code: 500 });
