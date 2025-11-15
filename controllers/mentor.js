@@ -796,7 +796,7 @@ exports.sendOffer = async (req, res) => {
 
         if (!mailResult) {
           console.log('Error Sending email', mailResult)
-          return res.status(500).json({ message: 'Failed to send offer email', error: mailResult.error, code: 500 });
+          return res.status(500).json({ message: 'Failed to send offer email', error: mailResult, code: 500 });
         }
 
         // Safe award badges
@@ -960,7 +960,7 @@ ${message ? `<p><strong>Message from mentor:</strong><br/>${message.replace(/\n/
 
     if (!mailResult) {
       console.log('Error Sending email', mailResult)
-      return res.status(500).json({ message: 'Failed to send offer email', error: mailResult.error, code: 500 });
+      return res.status(500).json({ message: 'Failed to send offer email', error: mailResult, code: 500 });
     }
 
     // notify via pusher if learner has a linked userId
@@ -1109,7 +1109,7 @@ ${req.body?.message ? `<p><strong>Message from mentor:</strong><br/>${req.body.m
 
     if (!mailResult) {
       console.log('Error Sending email', mailResult)
-      return res.status(500).json({ message: 'Failed to send invite email', error: mailResult.error, code: 500 });
+      return res.status(500).json({ message: 'Failed to send invite email', error: mailResult, code: 500 });
     }
 
     // send pusher event to learner (best-effort)
