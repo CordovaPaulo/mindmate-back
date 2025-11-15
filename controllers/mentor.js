@@ -228,10 +228,19 @@ exports.cancelSched = async (req, res) => {
             return res.status(403).json({ message: 'Not authorized to cancel this schedule', code: 403 });
         }
 
-        const mailResult = await mailingController.sendCancellationByMentor(id, mentor._id || decoded.id, reason);
-        
-        if (!mailResult) {
-            console.log('Error sending cancellation email (mentor):', mailResult);
+        let mailResult = null;
+        try {
+            console.log(`[MENTOR CANCEL] Attempting to send cancellation email for schedule ${id}`);
+            mailResult = await mailingController.sendCancellationByMentor(id, mentor._id || decoded.id, reason);
+            console.log(`[MENTOR CANCEL] Email sent successfully for schedule ${id}`);
+        } catch (mailErr) {
+            console.error(`[MENTOR CANCEL ERROR] Failed to send cancellation email for schedule ${id}:`, {
+                error: mailErr.message,
+                stack: mailErr.stack,
+                scheduleId: id,
+                mentorId: mentor._id || decoded.id,
+                reason
+            });
         }
 
         // Delete the schedule
@@ -385,6 +394,7 @@ exports.reschedSched = async (req, res) => {
 
         // send reschedule email to learner
        try {
+         console.log(`[MENTOR RESCHEDULE] Attempting to send reschedule email for schedule ${id}`);
          await mailingController.sendRescheduleByMentor(
            id,
            mentor._id || decoded.id,
@@ -392,8 +402,17 @@ exports.reschedSched = async (req, res) => {
            schedule.time,
            schedule.location
          );
+         console.log(`[MENTOR RESCHEDULE] Email sent successfully for schedule ${id}`);
        } catch (mailErr) {
-         console.error('Error sending reschedule email (mentor):', mailErr);
+         console.error(`[MENTOR RESCHEDULE ERROR] Failed to send reschedule email for schedule ${id}:`, {
+           error: mailErr.message,
+           stack: mailErr.stack,
+           scheduleId: id,
+           mentorId: mentor._id || decoded.id,
+           newDate: schedule.date,
+           newTime: schedule.time,
+           newLocation: schedule.location
+         });
        }
 
         // Notify learner via Pusher
@@ -619,14 +638,27 @@ exports.sendReminder = async (req, res) => {
     // verify mentor
     const mentor = await Mentor.findOne({ $or: [{ _id: decoded.id }, { userId: decoded.id }] });
     if (!mentor) return res.status(404).json({ message: 'Mentor not found', code: 404 });
-    await mailingController.sendScheduleReminder(id, mentor._id || decoded.id);
+    
+    try {
+      console.log(`[MENTOR REMINDER] Attempting to send reminder for schedule ${id}`);
+      await mailingController.sendScheduleReminder(id, mentor._id || decoded.id);
+      console.log(`[MENTOR REMINDER] Reminder sent successfully for schedule ${id}`);
+    } catch (mailErr) {
+      console.error(`[MENTOR REMINDER ERROR] Failed to send reminder for schedule ${id}:`, {
+        error: mailErr.message,
+        stack: mailErr.stack,
+        scheduleId: id,
+        mentorId: mentor._id || decoded.id
+      });
+      return res.status(500).json({ message: 'Failed to send reminder email', error: mailErr.message, code: 500 });
+    }
 
     // Safe award badges
     await safeAwardMentorBadgesByUserId(mentor._id);
 
     res.status(200).json({ message: 'Reminder sent', code: 200 });
   } catch (error) {
-    console.error('Error sending reminder (mentor):', error);
+    console.error('[MENTOR REMINDER CRITICAL] Error in sendReminder:', error);
     res.status(500).json({ message: error.message, code: 500 });
   }
 }
@@ -787,15 +819,26 @@ exports.sendOffer = async (req, res) => {
     <p>Best regards,<br/>MindMate Team</p>
     `.trim();
 
-        const mailResult = await mailingController.sendEmailNotification(
-        toEmail,
-        emailSubject,
-        emailText,
-        emailHtml
-        );
-
-        if (!mailResult) {
-        return res.status(500).json({ message: 'Failed to send offer email', code: 500 });
+        let mailResult = null;
+        try {
+          console.log(`[MENTOR OFFER] Attempting to send offer email to learner ${learnerId}`);
+          mailResult = await mailingController.sendEmailNotification(
+            toEmail,
+            emailSubject,
+            emailText,
+            emailHtml
+          );
+          console.log(`[MENTOR OFFER] Offer email sent successfully to ${toEmail}`);
+        } catch (mailErr) {
+          console.error(`[MENTOR OFFER ERROR] Failed to send offer email to learner ${learnerId}:`, {
+            error: mailErr.message,
+            stack: mailErr.stack,
+            learnerId,
+            mentorId: mentor._id,
+            subject,
+            toEmail
+          });
+          return res.status(500).json({ message: 'Failed to send offer email', error: mailErr.message, code: 500 });
         }
 
         // Safe award badges
@@ -950,15 +993,27 @@ ${message ? `<p><strong>Message from mentor:</strong><br/>${message.replace(/\n/
 <p>Best regards,<br/>MindMate Team</p>
     `.trim();
 
-    const mailResult = await mailingController.sendEmailNotification(
-      toEmail,
-      emailSubject,
-      emailText,
-      emailHtml
-    );
-
-    if (!mailResult) {
-      return res.status(500).json({ message: 'Failed to send offer email', code: 500 });
+    let mailResult = null;
+    try {
+      console.log(`[MENTOR GROUP OFFER] Attempting to send group offer email to learner ${learnerId}`);
+      mailResult = await mailingController.sendEmailNotification(
+        toEmail,
+        emailSubject,
+        emailText,
+        emailHtml
+      );
+      console.log(`[MENTOR GROUP OFFER] Group offer email sent successfully to ${toEmail}`);
+    } catch (mailErr) {
+      console.error(`[MENTOR GROUP OFFER ERROR] Failed to send group offer to learner ${learnerId}:`, {
+        error: mailErr.message,
+        stack: mailErr.stack,
+        learnerId,
+        mentorId: mentor._id,
+        subject,
+        groupName: groupName || 'N/A',
+        toEmail
+      });
+      return res.status(500).json({ message: 'Failed to send group offer email', error: mailErr.message, code: 500 });
     }
 
     // notify via pusher if learner has a linked userId
@@ -1098,15 +1153,27 @@ ${req.body?.message ? `<p><strong>Message from mentor:</strong><br/>${req.body.m
 <p>Best regards,<br/>MindMate Team</p>
     `.trim();
 
-    const mailResult = await mailingController.sendEmailNotification(
-      toEmail,
-      emailSubject,
-      emailText,
-      emailHtml
-    );
-
-    if (!mailResult) {
-      return res.status(500).json({ message: 'Failed to send invite email', code: 500 });
+    let mailResult = null;
+    try {
+      console.log(`[MENTOR EXISTING GROUP] Attempting to send existing group invite to learner ${learnerId}`);
+      mailResult = await mailingController.sendEmailNotification(
+        toEmail,
+        emailSubject,
+        emailText,
+        emailHtml
+      );
+      console.log(`[MENTOR EXISTING GROUP] Invite email sent successfully to ${toEmail}`);
+    } catch (mailErr) {
+      console.error(`[MENTOR EXISTING GROUP ERROR] Failed to send invite to learner ${learnerId}:`, {
+        error: mailErr.message,
+        stack: mailErr.stack,
+        learnerId,
+        sessionId,
+        scheduleId: offerPayload.scheduleId,
+        mentorId: mentor._id,
+        toEmail
+      });
+      return res.status(500).json({ message: 'Failed to send invite email', error: mailErr.message, code: 500 });
     }
 
     // send pusher event to learner (best-effort)

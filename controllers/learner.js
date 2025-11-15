@@ -589,9 +589,17 @@ exports.cancelSched = async (req, res) => {
 
     // send email to mentor
     try {
+      console.log(`[LEARNER CANCEL] Attempting to send cancellation email for schedule ${id}`);
       await mailingController.sendCancellationByLearner(id, String(learner._id), reason);
+      console.log(`[LEARNER CANCEL] Cancellation email sent successfully for schedule ${id}`);
     } catch (mailErr) {
-      console.error('Error sending cancellation email (learner):', mailErr);
+      console.error(`[LEARNER CANCEL ERROR] Failed to send cancellation email for schedule ${id}:`, {
+        error: mailErr.message,
+        stack: mailErr.stack,
+        scheduleId: id,
+        learnerId: learner._id,
+        reason
+      });
     }
 
     // Pusher: notify schedule cancellation
@@ -697,6 +705,7 @@ exports.reschedSched = async (req, res) => {
 
     // email mentor
     try {
+      console.log(`[LEARNER RESCHEDULE] Attempting to send reschedule email for schedule ${id}`);
       await mailingController.sendRescheduleByLearner(
         id,
         String(learner._id),
@@ -704,8 +713,17 @@ exports.reschedSched = async (req, res) => {
         schedule.time,
         schedule.location
       );
+      console.log(`[LEARNER RESCHEDULE] Reschedule email sent successfully for schedule ${id}`);
     } catch (mailErr) {
-      console.error('Error sending reschedule email (learner):', mailErr);
+      console.error(`[LEARNER RESCHEDULE ERROR] Failed to send reschedule email for schedule ${id}:`, {
+        error: mailErr.message,
+        stack: mailErr.stack,
+        scheduleId: id,
+        learnerId: learner._id,
+        newDate: schedule.date,
+        newTime: schedule.time,
+        newLocation: schedule.location
+      });
     }
     return res.status(200).json({ message: 'Schedule rescheduled', schedule, code: 200 });
   } catch (error) {
@@ -829,6 +847,7 @@ exports.acceptOffer = async (req, res) => {
           const mentorUser = mentor.userId ? await User.findById(mentor.userId) : null;
           const mentorEmail = mentorUser?.email || mentor.email;
           if (mentorEmail) {
+            console.log(`[LEARNER ACCEPT OFFER] Attempting to notify mentor ${mentor._id} about group join`);
             await mailingController.sendEmailNotification(
               mentorEmail,
               `Group invite accepted: ${groupSchedule.subject}`,
@@ -845,9 +864,16 @@ Details:
 Best regards,
 MindMate Team`
             );
+            console.log(`[LEARNER ACCEPT OFFER] Notification email sent to mentor ${mentorEmail}`);
           }
         } catch (mailErr) {
-          console.error('acceptOffer (group via scheduleId) notify mentor error:', mailErr);
+          console.error('[LEARNER ACCEPT OFFER ERROR] Failed to notify mentor about group join (scheduleId path):', {
+            error: mailErr.message,
+            stack: mailErr.stack,
+            scheduleId: payload.scheduleId,
+            mentorId: mentor._id,
+            learnerId: learner._id
+          });
         }
 
         try {
@@ -900,6 +926,7 @@ MindMate Team`
           const mentorUser = mentor.userId ? await User.findById(mentor.userId) : null;
           const mentorEmail = mentorUser?.email || mentor.email;
           if (mentorEmail) {
+            console.log(`[LEARNER ACCEPT OFFER] Attempting to notify mentor ${mentor._id} about group join`);
             await mailingController.sendEmailNotification(
               mentorEmail,
               `Group offer accepted: ${payload.subject}`,
@@ -916,9 +943,16 @@ Details:
 Best regards,
 MindMate Team`
             );
+            console.log(`[LEARNER ACCEPT OFFER] Notification email sent to mentor ${mentorEmail}`);
           }
         } catch (mailErr) {
-          console.error('acceptOffer (group) notify mentor error:', mailErr);
+          console.error('[LEARNER ACCEPT OFFER ERROR] Failed to notify mentor about group join (fallback path):', {
+            error: mailErr.message,
+            stack: mailErr.stack,
+            mentorId: mentor._id,
+            learnerId: learner._id,
+            subject: payload.subject
+          });
         }
 
         try {
@@ -958,6 +992,7 @@ MindMate Team`
           const mentorUser = mentor.userId ? await User.findById(mentor.userId) : null;
           const mentorEmail = mentorUser?.email || mentor.email;
           if (mentorEmail) {
+            console.log(`[LEARNER ACCEPT OFFER] Attempting to notify mentor ${mentor._id} about new group creation`);
             await mailingController.sendEmailNotification(
               mentorEmail,
               `Group offer accepted: ${payload.subject}`,
@@ -974,9 +1009,17 @@ Details:
 Best regards,
 MindMate Team`
             );
+            console.log(`[LEARNER ACCEPT OFFER] Notification email sent to mentor ${mentorEmail}`);
           }
         } catch (mailErr) {
-          console.error('acceptOffer (group) notify mentor error:', mailErr);
+          console.error('[LEARNER ACCEPT OFFER ERROR] Failed to notify mentor about new group creation:', {
+            error: mailErr.message,
+            stack: mailErr.stack,
+            mentorId: mentor._id,
+            learnerId: learner._id,
+            subject: payload.subject,
+            groupName: payload.groupName
+          });
         }
 
         try {
@@ -1049,6 +1092,7 @@ MindMate Team`
         const mentorUser = mentor.userId ? await User.findById(mentor.userId) : null;
         const mentorEmail = mentorUser?.email || mentor.email;
         if (mentorEmail) {
+          console.log(`[LEARNER ACCEPT OFFER] Attempting to notify mentor ${mentor._id} about one-on-one acceptance`);
           await mailingController.sendEmailNotification(
             mentorEmail,
             `Offer accepted: ${payload.subject}`,
@@ -1065,9 +1109,16 @@ Details:
 Best regards,
 MindMate Team`
           );
+          console.log(`[LEARNER ACCEPT OFFER] One-on-one acceptance email sent to mentor ${mentorEmail}`);
         }
       } catch (mailErr) {
-        console.error('acceptOffer notify mentor error:', mailErr);
+        console.error('[LEARNER ACCEPT OFFER ERROR] Failed to notify mentor about one-on-one offer acceptance:', {
+          error: mailErr.message,
+          stack: mailErr.stack,
+          mentorId: mentor._id,
+          learnerId: learner._id,
+          subject: payload.subject
+        });
       }
 
       // Pusher: notify offer acceptance

@@ -81,9 +81,26 @@ MindMate Team
 </html>
 `.trim();
 
-    await mailingController.sendEmailNotification(email, subj, text, html);
+    try {
+      console.log(`[AUTH ROLE CONFIRM] Attempting to send ${role} confirmation email to ${email}`);
+      await mailingController.sendEmailNotification(email, subj, text, html);
+      console.log(`[AUTH ROLE CONFIRM] Confirmation email sent successfully to ${email}`);
+    } catch (mailErr) {
+      console.error(`[AUTH ROLE CONFIRM ERROR] Failed to send ${role} confirmation email to ${email}:`, {
+        error: mailErr.message,
+        stack: mailErr.stack,
+        userId: uid,
+        role,
+        roleDocId,
+        email
+      });
+      throw mailErr;
+    }
   } catch (e) {
-    console.error('[MAIL] Failed to send role confirmation email:', e.message);
+    console.error('[AUTH ROLE CONFIRM CRITICAL] Error in sendRoleConfirmationEmail:', {
+      error: e.message,
+      stack: e.stack
+    });
   }
 }
 
@@ -712,7 +729,19 @@ ${brand.name} Team
 </html>
 `.trim();
 
-    await mailingController.sendEmailNotification(user.email, subject, text, html);
+    try {
+      console.log(`[AUTH FORGOT PASSWORD] Attempting to send reset email to ${user.email}`);
+      await mailingController.sendEmailNotification(user.email, subject, text, html);
+      console.log(`[AUTH FORGOT PASSWORD] Reset email sent successfully to ${user.email}`);
+    } catch (mailErr) {
+      console.error(`[AUTH FORGOT PASSWORD ERROR] Failed to send reset email to ${user.email}:`, {
+        error: mailErr.message,
+        stack: mailErr.stack,
+        userId: user._id,
+        email: user.email
+      });
+      return res.status(500).json({ message: 'Failed to send password reset email', error: mailErr.message, code: 500 });
+    }
 
     return res.status(200).json({ message: 'Password reset link sent if verification succeeded.', code: 200 });
   } catch (err) {
