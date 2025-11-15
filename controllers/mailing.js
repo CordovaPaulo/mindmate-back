@@ -82,7 +82,8 @@ Best regards,
 MindMate Team
     `.trim();
 
-      await exports.sendEmailNotification(learnerEmail, subject, text);
+      // Use fire-and-forget helper
+      sendEmailAsync(learnerEmail, subject, text);
     } catch (error) {
       console.error('❌ Error sending schedule reminder:', error);
     }
@@ -126,7 +127,8 @@ Best regards,
 MindMate Team
     `.trim();
 
-      await exports.sendEmailNotification(learnerEmail, subject, text);
+      // Use fire-and-forget helper
+      sendEmailAsync(learnerEmail, subject, text);
     } catch (error) {
       console.error('❌ Error sending cancellation by mentor:', error);
     }
@@ -170,7 +172,8 @@ Best regards,
 MindMate Team
     `.trim();
 
-      await exports.sendEmailNotification(mentorEmail, subject, text);
+      // Use fire-and-forget helper
+      sendEmailAsync(mentorEmail, subject, text);
     } catch (error) {
       console.error('❌ Error sending cancellation by learner:', error);
     }
@@ -217,7 +220,8 @@ Best regards,
 MindMate Team
     `.trim();
 
-      await exports.sendEmailNotification(learnerEmail, subject, text);
+      // Use fire-and-forget helper
+      sendEmailAsync(learnerEmail, subject, text);
     } catch (error) {
       console.error('❌ Error sending reschedule by mentor:', error);
     }
@@ -264,7 +268,8 @@ Best regards,
 MindMate Team
     `.trim();
 
-      await exports.sendEmailNotification(mentorEmail, subject, text);
+      // Use fire-and-forget helper
+      sendEmailAsync(mentorEmail, subject, text);
     } catch (error) {
       console.error('❌ Error sending reschedule by learner:', error);
     }
