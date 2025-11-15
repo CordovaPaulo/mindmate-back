@@ -22,72 +22,76 @@ async function findUserEmailById(id) {
 
 exports.sendEmailNotification = async (to, subject, text, html = undefined) => {
   const startTime = Date.now();
+  let timeoutId; // Track timeout
+  
   try {
-    console.log(`[MAILING] Starting email notification process...`);
-    console.log(`[MAILING] To: ${to}`);
-    console.log(`[MAILING] Subject: ${subject}`);
-    
+    // console.log(`[MAILING] Starting email notification process...`);
+    // console.log(`[MAILING] To: ${to}`);
+    // console.log(`[MAILING] Subject: ${subject}`);
+
     if (!to) {
-      const errMsg = '[MAILING ERROR] Recipient email address is required';
-      console.error(errMsg);
-      throw new Error(errMsg);
+      throw new Error('Recipient email address is required');
     }
-    
-    const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+
+    const from = process.env.BREVO_FROM_EMAIL || process.env.EMAIL_FROM || process.env.EMAIL_USER;
     if (!from) {
-      const errMsg = '[MAILING ERROR] EMAIL_FROM or EMAIL_USER environment variable is not set';
-      console.error(errMsg);
-      throw new Error(errMsg);
+      throw new Error('Sender email address (BREVO_FROM_EMAIL or EMAIL_FROM) must be set in environment variables');
     }
-    
-    console.log(`[MAILING] From: ${from}`);
-    console.log(`[MAILING] Initiating SMTP connection...`);
-    
-    // ✅ Set a race between email and timeout
-    const sendPromise = mailing.sendMail({
+
+    // console.log(`[MAILING] From: ${from}`);
+    // console.log(`[MAILING] Initiating Brevo API request...`);
+
+    // Set up timeout warning (but don't block the request)
+    timeoutId = setTimeout(() => {
+      console.warn(`⚠️ [MAILING TIMEOUT WARNING] Email to ${to} is taking longer than 60 seconds`);
+    }, 60000);
+
+    const info = await mailing.sendMail({
       from,
       to,
       subject,
       text,
-      ...(html ? { html } : {})
+      html
     });
-    
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => {
-        const errMsg = `[MAILING TIMEOUT] Email sending exceeded 60 second timeout limit`;
-        console.error(errMsg);
-        reject(new Error(errMsg));
-      }, 60000) // 60s limit
-    );
-    
-    const info = await Promise.race([sendPromise, timeoutPromise]);
+
+    // Clear timeout since email succeeded
+    clearTimeout(timeoutId);
+
     const duration = Date.now() - startTime;
-    console.log(`✅ [MAILING SUCCESS] Email sent successfully in ${duration}ms`);
-    console.log(`[MAILING] Message ID: ${info.messageId}`);
-    console.log(`[MAILING] Response: ${info.response}`);
+    // console.log(`✅ [MAILING SUCCESS] Email sent successfully in ${duration}ms`);
+    // console.log(`[MAILING] Message ID: ${info.messageId || 'N/A'}`);
+    // console.log(`[MAILING] Response: ${info.response || '250 OK'}`);
+
     return info;
   } catch (error) {
+    // Clear timeout on error too
+    if (timeoutId) clearTimeout(timeoutId);
+    
     const duration = Date.now() - startTime;
+    
+    // Detect specific error types
+    let errorType = 'Unknown error';
+    if (error.code === 'ETIMEDOUT') {
+      errorType = 'Connection timeout - Brevo API unreachable or network issue';
+    } else if (error.code === 'ECONNREFUSED') {
+      errorType = 'Connection refused - Brevo API server refusing connections';
+    } else if (error.code === 'EAUTH' || error.message?.includes('authentication')) {
+      errorType = 'Authentication failed - Check BREVO_API_KEY';
+    } else if (error.message?.includes('timeout')) {
+      errorType = 'Request timeout - Brevo API took too long to respond';
+    } else if (error.message?.includes('Brevo API error')) {
+      errorType = 'Brevo API error - Check API key and sender email';
+    }
+
     console.error(`❌ [MAILING FAILED] Error sending email after ${duration}ms:`, {
       errorMessage: error.message,
+      errorType: errorType,
       errorCode: error.code,
-      errorCommand: error.command,
       recipient: to,
       subject: subject,
       stack: error.stack
     });
-    
-    // Log specific error types for easier debugging
-    if (error.code === 'ETIMEDOUT') {
-      console.error('[MAILING ERROR] Connection timeout - SMTP server unreachable or port blocked');
-    } else if (error.code === 'ECONNREFUSED') {
-      console.error('[MAILING ERROR] Connection refused - SMTP server not accepting connections');
-    } else if (error.code === 'EAUTH') {
-      console.error('[MAILING ERROR] Authentication failed - check EMAIL_USER and EMAIL_PASS');
-    } else if (error.message.includes('timeout')) {
-      console.error('[MAILING ERROR] Operation timeout - email sending took too long');
-    }
-    
+
     throw error;
   }
 };
