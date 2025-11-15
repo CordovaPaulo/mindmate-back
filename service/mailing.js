@@ -12,12 +12,12 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  pool: true,                 // Reuse connections
+  pool: true,                 // Reuse connections (critical for speed)
   maxConnections: 5,          // Max concurrent connections
   maxMessages: 100,           // Max messages per connection
-  connectionTimeout: 100000,   // 60s - increased for slow networks
-  greetingTimeout: 100000,     // 30s
-  socketTimeout: 100000,       // 60s - increased for Render
+  connectionTimeout: 60000,   // 60s
+  greetingTimeout: 30000,     // 30s
+  socketTimeout: 60000,       // 60s
   tls: {
     rejectUnauthorized: true,
     minVersion: 'TLSv1.2'

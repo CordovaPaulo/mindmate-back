@@ -43,29 +43,31 @@ function sendEmailAsync(to, subject, text, html) {
   setImmediate(() => {
     exports.sendEmailNotification(to, subject, text, html)
       .then(info => {
-        if (info) console.log('Background email sent:', info.messageId);
+        if (info) console.log('✅ Background email queued:', info.messageId);
       })
-      .catch(err => console.error('Background email error:', err));
+      .catch(err => console.error('❌ Background email error:', err));
   });
 }
 
-// 1) Reminder to learner
-exports.sendScheduleReminder = async (scheduleId, mentorId) => {
-  try {
-    const schedule = await Schedule.findById(scheduleId);
-    if (!schedule) throw new Error('Schedule not found');
+// 1) Reminder to learner - INSTANT RETURN (no await)
+exports.sendScheduleReminder = (scheduleId, mentorId) => {
+  // Fire and forget - do NOT await
+  setImmediate(async () => {
+    try {
+      const schedule = await Schedule.findById(scheduleId);
+      if (!schedule) throw new Error('Schedule not found');
 
-    const learner = await findLearnerByAny(schedule.learner);
-    if (!learner) throw new Error('Learner not found');
+      const learner = await findLearnerByAny(schedule.learner);
+      if (!learner) throw new Error('Learner not found');
 
-    const learnerEmail = await findUserEmailById(learner.userId);
-    if (!learnerEmail) throw new Error('Learner user not found');
+      const learnerEmail = await findUserEmailById(learner.userId);
+      if (!learnerEmail) throw new Error('Learner user not found');
 
-    const mentor = await findMentorByAny(mentorId);
-    if (!mentor) throw new Error('Mentor not found');
+      const mentor = await findMentorByAny(mentorId);
+      if (!mentor) throw new Error('Mentor not found');
 
-    const subject = `Reminder: Upcoming Study Session with ${mentor.name}`;
-    const text = `
+      const subject = `Reminder: Upcoming Study Session with ${mentor.name}`;
+      const text = `
 Dear ${learner.name},
 
 This is a friendly reminder about your upcoming study session:
@@ -80,32 +82,35 @@ Best regards,
 MindMate Team
     `.trim();
 
-    // Send async to not block the request
-    sendEmailAsync(learnerEmail, subject, text);
-    return { queued: true };
-  } catch (error) {
-    console.error('Error queueing schedule reminder:', error);
-    return null;
-  }
+      await exports.sendEmailNotification(learnerEmail, subject, text);
+    } catch (error) {
+      console.error('❌ Error sending schedule reminder:', error);
+    }
+  });
+  
+  // Return immediately
+  return { queued: true };
 };
 
-// 2) Cancellation (mentor -> learner)
-exports.sendCancellationByMentor = async (scheduleId, mentorId, reason = '') => {
-  try {
-    const schedule = await Schedule.findById(scheduleId);
-    if (!schedule) throw new Error('Schedule not found');
+// 2) Cancellation (mentor -> learner) - INSTANT RETURN
+exports.sendCancellationByMentor = (scheduleId, mentorId, reason = '') => {
+  // Fire and forget - do NOT await
+  setImmediate(async () => {
+    try {
+      const schedule = await Schedule.findById(scheduleId);
+      if (!schedule) throw new Error('Schedule not found');
 
-    const learner = await findLearnerByAny(schedule.learner);
-    if (!learner) throw new Error('Learner not found');
+      const learner = await findLearnerByAny(schedule.learner);
+      if (!learner) throw new Error('Learner not found');
 
-    const learnerEmail = await findUserEmailById(learner.userId);
-    if (!learnerEmail) throw new Error('Learner user not found');
+      const learnerEmail = await findUserEmailById(learner.userId);
+      if (!learnerEmail) throw new Error('Learner user not found');
 
-    const mentor = await findMentorByAny(mentorId);
-    if (!mentor) throw new Error('Mentor not found');
+      const mentor = await findMentorByAny(mentorId);
+      if (!mentor) throw new Error('Mentor not found');
 
-    const subject = `Session Cancelled: ${schedule.subject} on ${new Date(schedule.date).toLocaleDateString()}`;
-    const text = `
+      const subject = `Session Cancelled: ${schedule.subject} on ${new Date(schedule.date).toLocaleDateString()}`;
+      const text = `
 Dear ${learner.name},
 
 Your study session has been cancelled by your mentor.
@@ -121,32 +126,35 @@ Best regards,
 MindMate Team
     `.trim();
 
-    // Send async
-    sendEmailAsync(learnerEmail, subject, text);
-    return { queued: true };
-  } catch (error) {
-    console.error('Error queueing cancellation notification by mentor:', error);
-    return null;
-  }
+      await exports.sendEmailNotification(learnerEmail, subject, text);
+    } catch (error) {
+      console.error('❌ Error sending cancellation by mentor:', error);
+    }
+  });
+  
+  // Return immediately
+  return { queued: true };
 };
 
-// 3) Cancellation (learner -> mentor)
-exports.sendCancellationByLearner = async (scheduleId, learnerId, reason = '') => {
-  try {
-    const schedule = await Schedule.findById(scheduleId);
-    if (!schedule) throw new Error('Schedule not found');
+// 3) Cancellation (learner -> mentor) - INSTANT RETURN
+exports.sendCancellationByLearner = (scheduleId, learnerId, reason = '') => {
+  // Fire and forget - do NOT await
+  setImmediate(async () => {
+    try {
+      const schedule = await Schedule.findById(scheduleId);
+      if (!schedule) throw new Error('Schedule not found');
 
-    const learner = await findLearnerByAny(learnerId);
-    if (!learner) throw new Error('Learner not found');
+      const learner = await findLearnerByAny(learnerId);
+      if (!learner) throw new Error('Learner not found');
 
-    const mentor = await findMentorByAny(schedule.mentor);
-    if (!mentor) throw new Error('Mentor not found');
+      const mentor = await findMentorByAny(schedule.mentor);
+      if (!mentor) throw new Error('Mentor not found');
 
-    const mentorEmail = await findUserEmailById(mentor.userId);
-    if (!mentorEmail) throw new Error('Mentor user not found');
+      const mentorEmail = await findUserEmailById(mentor.userId);
+      if (!mentorEmail) throw new Error('Mentor user not found');
 
-    const subject = `Session Cancelled: ${schedule.subject} on ${new Date(schedule.date).toLocaleDateString()}`;
-    const text = `
+      const subject = `Session Cancelled: ${schedule.subject} on ${new Date(schedule.date).toLocaleDateString()}`;
+      const text = `
 Dear ${mentor.name},
 
 Your student has cancelled the upcoming study session.
@@ -162,32 +170,35 @@ Best regards,
 MindMate Team
     `.trim();
 
-    // Send async
-    sendEmailAsync(mentorEmail, subject, text);
-    return { queued: true };
-  } catch (error) {
-    console.error('Error queueing cancellation notification by learner:', error);
-    return null;
-  }
+      await exports.sendEmailNotification(mentorEmail, subject, text);
+    } catch (error) {
+      console.error('❌ Error sending cancellation by learner:', error);
+    }
+  });
+  
+  // Return immediately
+  return { queued: true };
 };
 
-// 4) Reschedule (mentor -> learner)
-exports.sendRescheduleByMentor = async (scheduleId, mentorId, newDate, newTime, newLocation = null) => {
-  try {
-    const schedule = await Schedule.findById(scheduleId);
-    if (!schedule) throw new Error('Schedule not found');
+// 4) Reschedule (mentor -> learner) - INSTANT RETURN
+exports.sendRescheduleByMentor = (scheduleId, mentorId, newDate, newTime, newLocation = null) => {
+  // Fire and forget - do NOT await
+  setImmediate(async () => {
+    try {
+      const schedule = await Schedule.findById(scheduleId);
+      if (!schedule) throw new Error('Schedule not found');
 
-    const learner = await findLearnerByAny(schedule.learner);
-    if (!learner) throw new Error('Learner not found');
+      const learner = await findLearnerByAny(schedule.learner);
+      if (!learner) throw new Error('Learner not found');
 
-    const learnerEmail = await findUserEmailById(learner.userId);
-    if (!learnerEmail) throw new Error('Learner user not found');
+      const learnerEmail = await findUserEmailById(learner.userId);
+      if (!learnerEmail) throw new Error('Learner user not found');
 
-    const mentor = await findMentorByAny(mentorId);
-    if (!mentor) throw new Error('Mentor not found');
+      const mentor = await findMentorByAny(mentorId);
+      if (!mentor) throw new Error('Mentor not found');
 
-    const subject = `Session Rescheduled: ${schedule.subject}`;
-    const text = `
+      const subject = `Session Rescheduled: ${schedule.subject}`;
+      const text = `
 Dear ${learner.name},
 
 Your mentor has rescheduled your study session.
@@ -206,32 +217,35 @@ Best regards,
 MindMate Team
     `.trim();
 
-    // Send async
-    sendEmailAsync(learnerEmail, subject, text);
-    return { queued: true };
-  } catch (error) {
-    console.error('Error queueing reschedule notification by mentor:', error);
-    return null;
-  }
+      await exports.sendEmailNotification(learnerEmail, subject, text);
+    } catch (error) {
+      console.error('❌ Error sending reschedule by mentor:', error);
+    }
+  });
+  
+  // Return immediately
+  return { queued: true };
 };
 
-// 5) Reschedule (learner -> mentor)
-exports.sendRescheduleByLearner = async (scheduleId, learnerId, newDate, newTime, newLocation = null) => {
-  try {
-    const schedule = await Schedule.findById(scheduleId);
-    if (!schedule) throw new Error('Schedule not found');
+// 5) Reschedule (learner -> mentor) - INSTANT RETURN
+exports.sendRescheduleByLearner = (scheduleId, learnerId, newDate, newTime, newLocation = null) => {
+  // Fire and forget - do NOT await
+  setImmediate(async () => {
+    try {
+      const schedule = await Schedule.findById(scheduleId);
+      if (!schedule) throw new Error('Schedule not found');
 
-    const learner = await findLearnerByAny(learnerId);
-    if (!learner) throw new Error('Learner not found');
+      const learner = await findLearnerByAny(learnerId);
+      if (!learner) throw new Error('Learner not found');
 
-    const mentor = await findMentorByAny(schedule.mentor);
-    if (!mentor) throw new Error('Mentor not found');
+      const mentor = await findMentorByAny(schedule.mentor);
+      if (!mentor) throw new Error('Mentor not found');
 
-    const mentorEmail = await findUserEmailById(mentor.userId);
-    if (!mentorEmail) throw new Error('Mentor user not found');
+      const mentorEmail = await findUserEmailById(mentor.userId);
+      if (!mentorEmail) throw new Error('Mentor user not found');
 
-    const subject = `Reschedule Request: ${schedule.subject}`;
-    const text = `
+      const subject = `Reschedule Request: ${schedule.subject}`;
+      const text = `
 Dear ${mentor.name},
 
 Your student has requested to reschedule.
@@ -250,11 +264,12 @@ Best regards,
 MindMate Team
     `.trim();
 
-    // Send async
-    sendEmailAsync(mentorEmail, subject, text);
-    return { queued: true };
-  } catch (error) {
-    console.error('Error queueing reschedule notification by learner:', error);
-    return null;
-  }
+      await exports.sendEmailNotification(mentorEmail, subject, text);
+    } catch (error) {
+      console.error('❌ Error sending reschedule by learner:', error);
+    }
+  });
+  
+  // Return immediately
+  return { queued: true };
 };

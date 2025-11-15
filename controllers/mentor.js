@@ -228,11 +228,8 @@ exports.cancelSched = async (req, res) => {
             return res.status(403).json({ message: 'Not authorized to cancel this schedule', code: 403 });
         }
 
-        const mailResult = await mailingController.sendCancellationByMentor(id, mentor._id || decoded.id, reason);
-        
-        if (!mailResult) {
-            console.log('Error sending cancellation email (mentor):', mailResult);
-        }
+        // Queue email in background (non-blocking)
+        const mailResult = mailingController.sendCancellationByMentor(id, mentor._id || decoded.id, reason);
 
         // Delete the schedule
         const scheduleFound = await Schedule.findByIdAndDelete(id);
@@ -383,18 +380,14 @@ exports.reschedSched = async (req, res) => {
             console.error('Socket emit error (reschedSched):', emitErr);
         }
 
-        // send reschedule email to learner
-       try {
-         await mailingController.sendRescheduleByMentor(
-           id,
-           mentor._id || decoded.id,
-           schedule.date,
-           schedule.time,
-           schedule.location
-         );
-       } catch (mailErr) {
-         console.error('Error sending reschedule email (mentor):', mailErr);
-       }
+        // Queue reschedule email in background (non-blocking)
+        mailingController.sendRescheduleByMentor(
+          id,
+          mentor._id || decoded.id,
+          schedule.date,
+          schedule.time,
+          schedule.location
+        );
 
         // Notify learner via Pusher
         try {
@@ -619,7 +612,9 @@ exports.sendReminder = async (req, res) => {
     // verify mentor
     const mentor = await Mentor.findOne({ $or: [{ _id: decoded.id }, { userId: decoded.id }] });
     if (!mentor) return res.status(404).json({ message: 'Mentor not found', code: 404 });
-    await mailingController.sendScheduleReminder(id, mentor._id || decoded.id);
+    
+    // Queue reminder email in background (non-blocking)
+    mailingController.sendScheduleReminder(id, mentor._id || decoded.id);
 
     // Safe award badges
     await safeAwardMentorBadgesByUserId(mentor._id);
@@ -1108,8 +1103,7 @@ ${req.body?.message ? `<p><strong>Message from mentor:</strong><br/>${req.body.m
     );
 
     if (!mailResult) {
-      console.log('Error Sending email', mailResult)
-      return res.status(500).json({ message: 'Failed to send invite email', error: mailResult, code: 500 });
+      return res.status(500).json({ message: 'Failed to send invite email', code: 500 });
     }
 
     // send pusher event to learner (best-effort)
