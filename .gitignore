@@ -52,7 +52,7 @@ uploads/
 public/uploads/
 tmp_uploads/
 
-# Secrets & credentials
+# Secrets & credentials (explicit files only — avoid ignoring all .json)
 *.pem
 *.key
 *.p12
@@ -62,14 +62,9 @@ service-account*.json
 google-credentials*.json
 drive-token*.json
 
-# Cloudinary / drive / token files
-*.json
-*.env.local
-
 # PM2
 pm2.pid
 pm2.log
-pids/
 
 # Misc
 *.tgz
