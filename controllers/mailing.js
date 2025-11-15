@@ -1,4 +1,4 @@
-const mailing = require('../service/mailing');
+const { sendMail } = require('../service/mailing');
 const User = require('../models/user');
 const Learner = require('../models/Learner');
 const Mentor = require('../models/Mentor');
@@ -24,7 +24,7 @@ exports.sendEmailNotification = async (to, subject, text, html = undefined) => {
   try {
     if (!to) throw new Error('Recipient email address is required');
     const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
-    const info = await mailing.sendMail({
+    const info = await sendMail({
       from,
       to,
       subject,
@@ -37,6 +37,17 @@ exports.sendEmailNotification = async (to, subject, text, html = undefined) => {
     return null;
   }
 };
+
+// OPTIMIZATION: Fire-and-forget wrapper to prevent blocking requests
+function sendEmailAsync(to, subject, text, html) {
+  setImmediate(() => {
+    exports.sendEmailNotification(to, subject, text, html)
+      .then(info => {
+        if (info) console.log('Background email sent:', info.messageId);
+      })
+      .catch(err => console.error('Background email error:', err));
+  });
+}
 
 // 1) Reminder to learner
 exports.sendScheduleReminder = async (scheduleId, mentorId) => {
@@ -69,9 +80,11 @@ Best regards,
 MindMate Team
     `.trim();
 
-    return await this.sendEmailNotification(learnerEmail, subject, text);
+    // Send async to not block the request
+    sendEmailAsync(learnerEmail, subject, text);
+    return { queued: true };
   } catch (error) {
-    console.error('Error sending schedule reminder:', error);
+    console.error('Error queueing schedule reminder:', error);
     return null;
   }
 };
@@ -108,9 +121,11 @@ Best regards,
 MindMate Team
     `.trim();
 
-    return await this.sendEmailNotification(learnerEmail, subject, text);
+    // Send async
+    sendEmailAsync(learnerEmail, subject, text);
+    return { queued: true };
   } catch (error) {
-    console.error('Error sending cancellation notification by mentor:', error);
+    console.error('Error queueing cancellation notification by mentor:', error);
     return null;
   }
 };
@@ -147,9 +162,11 @@ Best regards,
 MindMate Team
     `.trim();
 
-    return await this.sendEmailNotification(mentorEmail, subject, text);
+    // Send async
+    sendEmailAsync(mentorEmail, subject, text);
+    return { queued: true };
   } catch (error) {
-    console.error('Error sending cancellation notification by learner:', error);
+    console.error('Error queueing cancellation notification by learner:', error);
     return null;
   }
 };
@@ -189,9 +206,11 @@ Best regards,
 MindMate Team
     `.trim();
 
-    return await this.sendEmailNotification(learnerEmail, subject, text);
+    // Send async
+    sendEmailAsync(learnerEmail, subject, text);
+    return { queued: true };
   } catch (error) {
-    console.error('Error sending reschedule notification by mentor:', error);
+    console.error('Error queueing reschedule notification by mentor:', error);
     return null;
   }
 };
@@ -231,9 +250,11 @@ Best regards,
 MindMate Team
     `.trim();
 
-    return await this.sendEmailNotification(mentorEmail, subject, text);
+    // Send async
+    sendEmailAsync(mentorEmail, subject, text);
+    return { queued: true };
   } catch (error) {
-    console.error('Error sending reschedule notification by learner:', error);
+    console.error('Error queueing reschedule notification by learner:', error);
     return null;
   }
 };
