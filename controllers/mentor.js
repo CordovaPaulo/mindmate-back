@@ -707,14 +707,10 @@ exports.sendOffer = async (req, res) => {
     const decoded = getValuesFromToken(req);
     if (!decoded?.id) return res.status(403).json({ message: 'Invalid token', code: 403 });
 
-    if (!learnerId) {
-        return res.status(400).json({ message: 'learnerId parameter is required', code: 400 });
-    }
-
     const { date, time, location, subject, message } = req.body;
 
-    if (!date || !time || !location || !subject) {
-        return res.status(400).json({ message: 'date, time, location, and subject are required', code: 400 });
+    if ( !date || !time || !location || !subject ) {
+        return res.status(400).json({ message: 'learnerId, date, time, location, subject are required', code: 400 });
     }
 
     try {
@@ -722,24 +718,21 @@ exports.sendOffer = async (req, res) => {
         const mentor = await Mentor.findOne({ $or: [{ _id: decoded.id }, { userId: decoded.id }] });
         if (!mentor) return res.status(404).json({ message: 'Mentor not found', code: 404 });
 
-        // fetch learner (try by _id or userId)
-        let learner = await Learner.findOne({ $or: [{ _id: learnerId }, { userId: learnerId }] });
+        // fetch learner
+        let learner = await Learner.findById(learnerId);
+        if (!learner) learner = await Learner.findOne({ _id: learnerId });
         if (!learner) return res.status(404).json({ message: 'Learner not found', learner: learnerId, code: 404 });
 
         // resolve recipient email
         let toEmail = learner.email;
         if (!toEmail && learner.userId) {
-            try {
-                const u = await User.findById(learner.userId);
-                toEmail = u?.email || null;
-            } catch (userErr) {
-                console.error('Error finding user email:', userErr);
-            }
+        const u = await User.findById(learner.userId);
+        toEmail = u?.email || null;
         }
         if (!toEmail) return res.status(400).json({ message: 'Learner email not found', code: 400 });
 
         // build accept offer link (tokenized payload in query)
-        const apiBase = process.env.BACKEND_URL || process.env.FRONTEND_URL;
+        const apiBase = process.env.BACKEND_URL;
         const offerPayload = {
         offerId: Date.now().toString(), // simple unique id; replace with DB id if you persist offers
         mentorId: String(mentor._id),
