@@ -11,6 +11,9 @@ router.post('/mentor/alt-signup', mentorSignup, authController.mentorAltSignup);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/logout', authController.logout);
 
+// Check authentication status
+router.get('/check', authController.checkAuth);
+
 // verify token (existing) and alias for convenience (added)
 router.get('/reset-password/verify', authController.verifyResetToken);
 router.get('/reset-password', authController.verifyResetToken); // <-- alias so ?token=... works in browser

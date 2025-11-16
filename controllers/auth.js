@@ -89,6 +89,41 @@ MindMate Team
   }
 }
 
+// Check auth endpoint - verifies token from httpOnly cookie and returns user info
+exports.checkAuth = async (req, res) => {
+  try {
+    const decoded = getValuesFromToken(req);
+    
+    if (!decoded || !decoded.id) {
+      return res.status(401).json({ 
+        authenticated: false, 
+        message: 'Not authenticated',
+        code: 401 
+      });
+    }
+
+    // Return essential user info (token is already verified by getValuesFromToken)
+    return res.status(200).json({
+      authenticated: true,
+      user: {
+        id: decoded.id,
+        username: decoded.username,
+        email: decoded.email,
+        role: decoded.role,
+        accountStatus: decoded.accountStatus
+      },
+      code: 200
+    });
+  } catch (error) {
+    console.error('[CHECK_AUTH ERROR]', error);
+    return res.status(401).json({ 
+      authenticated: false, 
+      message: 'Authentication failed',
+      code: 401 
+    });
+  }
+};
+
 
 exports.learnerSignup = async (req, res) => {
   const decoded = getValuesFromToken(req);
