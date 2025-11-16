@@ -19,9 +19,7 @@ async function canUserJoinSession(scheduleId, userId) {
   const schedule = await Schedule.findById(scheduleId);
   if (!schedule) return { allowed: false, reason: 'Schedule not found' };
   
-  if (!isOnlineSession(schedule.location)) {
-    return { allowed: false, reason: 'Schedule is not an online session' };
-  }
+  // Remove online-only restriction - allow Jitsi for all sessions
   
   const mentor = await Mentor.findOne({ 
     $or: [{ _id: userId }, { userId: userId }] 
@@ -69,28 +67,8 @@ exports.getOrCreateSession = async (req, res) => {
     
     const { schedule, role, mentor, learner } = authCheck;
     
-    if (!isOnlineSession(schedule.location)) {
-      return res.status(400).json({ 
-        message: `Session modality is ${schedule.location}. Jitsi only available for online sessions.`, 
-        code: 400 
-      });
-    }
-    
-    // Check if session time is valid (within ±15min window)
-    const now = new Date();
-    const sessionDateTime = new Date(schedule.date);
-    const [hours, minutes] = schedule.time.split(':');
-    sessionDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-    
-    const timeDiff = Math.abs(now - sessionDateTime) / 60000;
-    if (timeDiff > 15) {
-      return res.status(403).json({ 
-        message: 'Session not active yet. Join within 15 minutes of scheduled time.', 
-        scheduledTime: sessionDateTime.toISOString(),
-        currentTime: now.toISOString(),
-        code: 403 
-      });
-    }
+    // Allow Jitsi session creation for any session type (online or in-person)
+    // Remove time restriction - users can create/join anytime
     
     let jitsiSession = await Jitsi.findOne({ scheduleId: schedule._id });
     
