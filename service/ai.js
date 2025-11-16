@@ -2,7 +2,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { NlpManager } = require('node-nlp');
 
 const {
-  AI_MODEL = 'gemini-1.5-flash',
+  AI_MODEL = 'gemini-2.5-flash',
   AI_MAX_TOKENS = '1024',
   AI_TEMPERATURE = '0.7',
   GOOGLE_API_KEY,
@@ -276,6 +276,18 @@ async function generateWithFallback({ user, context, intent }) {
  * Generate an AI response with automatic fallback
  */
 async function generateAIResponse({ system, user, context, intent }) {
+  // If Google API key is not configured, skip Gemini and use the fallback immediately.
+  if (!GOOGLE_API_KEY) {
+    console.warn('[AI] GOOGLE_API_KEY not set; using NLP fallback only');
+    try {
+      const fallbackResult = await generateWithFallback({ user, context, intent });
+      return fallbackResult;
+    } catch (fallbackError) {
+      console.error('[AI] Fallback failed:', fallbackError?.message || fallbackError);
+      return { answer: 'I\'m having trouble right now. Please try again in a moment.', intent: 'error' };
+    }
+  }
+
   try {
     console.log('[AI] Attempting Gemini...');
     const model = getModel();
@@ -291,18 +303,14 @@ async function generateAIResponse({ system, user, context, intent }) {
     console.log('[AI] Success with Gemini');
     return { answer: text.trim(), intent: intent || 'gemini' };
   } catch (error) {
-    console.warn('[AI] Gemini failed, using NLP fallback:', error.status || error.message);
-    
+    console.warn('[AI] Gemini failed, using NLP fallback. Error:', error?.status || error?.message || error);
     try {
       const fallbackResult = await generateWithFallback({ user, context, intent });
       console.log('[AI] Success with NLP fallback');
       return fallbackResult;
     } catch (fallbackError) {
-      console.error('[AI] Fallback failed:', fallbackError.message);
-      return {
-        answer: 'I\'m having trouble right now. Please try again in a moment.',
-        intent: 'error'
-      };
+      console.error('[AI] Fallback failed:', fallbackError?.message || fallbackError);
+      return { answer: 'I\'m having trouble right now. Please try again in a moment.', intent: 'error' };
     }
   }
 }

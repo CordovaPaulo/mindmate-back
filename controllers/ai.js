@@ -29,12 +29,13 @@ async function chatAssist(req, res) {
         const context = 
             'You are MindMate\'s AI Study Assistant. Answer questions about the platform and general study help briefly.';
 
-        const reply = await generateAIResponse({ 
-            system: systemInstruction,
-            user: message,
-            context
+        const result = await generateAIResponse({ 
+          system: systemInstruction,
+          user: message,
+          context
         });
 
+        const reply = typeof result === 'string' ? result : result?.answer || 'Sorry, I had trouble responding.';
         return res.json({ reply, mode });
     } catch (error) {
         console.error('[AI] chatAssist error:', error);
@@ -68,12 +69,13 @@ async function chatSummarize(req, res) {
 
         const context = 'Task: Summarize the user-provided lesson text concisely for quick review.';
 
-        const reply = await generateAIResponse({ 
-            system: systemInstruction,
-            user: message,
-            context
+        const result = await generateAIResponse({ 
+          system: systemInstruction,
+          user: message,
+          context
         });
 
+        const reply = typeof result === 'string' ? result : result?.answer || 'Sorry, I had trouble responding.';
         return res.json({ reply, mode });
     } catch (error) {
         console.error('[AI] chatSummarize error:', error);
@@ -364,12 +366,13 @@ async function chatMotivate(req, res) {
         
         const prompt = 'Please send a short motivational note.';
 
-        const reply = await generateAIResponse({ 
-            system: systemInstruction,
-            user: prompt,
-            context
+        const result = await generateAIResponse({ 
+          system: systemInstruction,
+          user: prompt,
+          context
         });
 
+        const reply = typeof result === 'string' ? result : result?.answer || 'Sorry, I had trouble responding.';
         return res.json({ reply, mode });
     } catch (error) {
         console.error('[AI] chatMotivate error:', error);
