@@ -40,8 +40,10 @@ async function sendRoleConfirmationEmail({ id: uid, username, email }, role, rol
       { expiresIn: '2d' }
     );
 
-    const verifyUrl = `http://localhost:3001/api/auth/role/verify?token=${encodeURIComponent(verifyToken)}`;
-    const unverifyUrl = `http://localhost:3001/api/auth/role/unverify?token=${encodeURIComponent(unverifyToken)}`;
+    const API_BASE = process.env.BACKEND_URL || 'http://localhost:3001';
+
+    const verifyUrl = `${API_BASE}/api/auth/role/verify?token=${encodeURIComponent(verifyToken)}`;
+    const unverifyUrl = `${API_BASE}/api/auth/role/unverify?token=${encodeURIComponent(unverifyToken)}`;
 
     const subj = `Confirm your ${role === 'mentor' ? 'Mentor' : 'Learner'} account`;
     const text = `
