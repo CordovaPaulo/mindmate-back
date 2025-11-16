@@ -22,6 +22,7 @@ const forumRouter = require('./routes/forum');
 const jitsiRouter = require('./routes/jitsi'); // NEW
 const roleRouter = require('./routes/role');
 const aiRouter = require('./routes/ai');
+const whiteboardRouter = require('./routes/whiteboard');
 
 const app = express();
 
@@ -72,6 +73,7 @@ app.use('/api/forum', forumRouter);
 app.use('/api/jitsi', jitsiRouter); // NEW
 app.use('/api/role', roleRouter);
 app.use('/ai', aiRouter);
+app.use('/api/whiteboard', whiteboardRouter)
 
 // 404 handler
 app.use((req, res, next) => {
