@@ -7,7 +7,7 @@ const { authenticateToken } = require('../service/jwt');
 router.get('/health', botpressController.healthCheck);
 
 // Protected endpoints - require authentication
-router.post('/get-schedule', authenticateToken(), botpressController.getSchedule);
-router.post('/summarize', authenticateToken(), botpressController.summarizeText);
+router.post('/get-schedule', botpressController.getSchedule);
+router.post('/summarize', botpressController.summarizeText);
 
 module.exports = router;
