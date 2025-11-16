@@ -33,12 +33,29 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser()); 
 
 // CORS configuration - MUST BE BEFORE ROUTES
-app.use(cors({
-    allowedOrigin: process.env.FRONTEND_URL,
+const corsOptions = {
+    origin: function (origin, callback) {
+        const allowedOrigins = [
+            process.env.FRONTEND_URL,
+            'https://mindmate-one-lac.vercel.app',
+            'http://localhost:3000',
+            'http://localhost:3001'
+        ];
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Set-Cookie'],
     credentials: true,
-}));
+    optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 
 // API Routes
 app.use('/api', indexRouter);

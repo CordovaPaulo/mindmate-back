@@ -506,8 +506,8 @@ exports.login = async (req, res) => {
 
     res.cookie('MindMateToken', token, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'Lax',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
       path: '/',
       maxAge: parseInt(process.env.AUTH_COOKIE_MAX_AGE || `${7 * 24 * 60 * 60 * 1000}`, 10)
     });
@@ -773,8 +773,9 @@ exports.logout = async (req, res) => {
   try {
     res.clearCookie('MindMateToken', {
       httpOnly: true,
-      secure: false,
-      sameSite: 'Lax',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+      path: '/'
     });
     return res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
@@ -1165,7 +1166,7 @@ exports.switchRole = async (req, res) => {
     try {
       res.clearCookie('MindMateToken', {
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
         secure: process.env.NODE_ENV === 'production',
         path: '/',
       });
