@@ -180,10 +180,27 @@ exports.getFeedbacks = async (req, res) => {
     //     return res.status(404).json({message: 'No feedbacks found', code: 404})
     //   }
 
+      // Manually fetch learner details for each feedback
+      const feedbacksWithLearner = await Promise.all(
+        feedbacks.map(async (feedback) => {
+          const learner = await Learner.findById(feedback.learner).select('name program yearLevel image phoneNumber');
+          return {
+            _id: feedback._id,
+            mentor: feedback.mentor,
+            learner: learner || { name: 'Unknown', program: 'N/A', yearLevel: 'N/A', image: '' },
+            schedule: feedback.schedule,
+            rating: feedback.rating,
+            comments: feedback.comments,
+            createdAt: feedback.createdAt,
+            updatedAt: feedback.updatedAt
+          };
+        })
+      );
+
       // Safe award badges
       await safeAwardMentorBadgesByUserId(mentor._id);
 
-      res.status(200).json(feedbacks);
+      res.status(200).json(feedbacksWithLearner);
     } catch (error) {
       res.status(500).json({message: 'Server error', code: 500})
     }
@@ -470,9 +487,9 @@ exports.getSchedules = async (req, res) => {
             if (!schedDate) continue;
 
             console.log('Schedule ID:', schedule._id);
-            console.log('Learner ID:', schedule.learner);
+            console.log('Learners:', schedule.learners);
             
-            // Try different approaches to find mentor and learner
+            // Try different approaches to find mentor
             let schedMentor = await Mentor.findById(schedule.mentor);
             if (!schedMentor) {
                 schedMentor = await Mentor.findOne({ userId: schedule.mentor });
@@ -481,21 +498,34 @@ exports.getSchedules = async (req, res) => {
                 schedMentor = await Mentor.findOne({ _id: schedule.mentor });
             }
             
-            let learner = await Learner.findById(schedule.learner);
-            if (!learner) {
-                learner = await Learner.findOne({ userId: schedule.learner });
-            }
-            if (!learner) {
-                learner = await Learner.findOne({ _id: schedule.learner });
-            }
+            // Handle learners array (for both one-on-one and group sessions)
+            const learnerIds = schedule.learners || [];
+            const learnersData = await Promise.all(
+                learnerIds.map(async (learnerId) => {
+                    let learner = await Learner.findById(learnerId);
+                    if (!learner) {
+                        learner = await Learner.findOne({ userId: learnerId });
+                    }
+                    if (!learner) {
+                        learner = await Learner.findOne({ _id: learnerId });
+                    }
+                    return learner;
+                })
+            );
+            
+            // Filter out null learners
+            const validLearners = learnersData.filter(l => l !== null);
             
             console.log('Found mentor:', schedMentor?.name || 'Not found');
-            console.log('Found learner:', learner?.name || 'Not found');
+            console.log('Found learners:', validLearners.map(l => l?.name).join(', ') || 'None found');
             
             // Skip past schedules for mentor (no schedForReview)
             if (schedDate < today) {
                 continue;
             }
+
+            // For one-on-one sessions, use the first learner
+            const primaryLearner = validLearners[0];
 
             // Simplified response payload with only required information
             const transformedSchedule = {
@@ -505,7 +535,7 @@ exports.getSchedules = async (req, res) => {
                 time: schedule.time,
                 location: schedule.location,
                 subject: schedule.subject,
-                type: schedule.type,
+                sessionType: schedule.sessionType || 'one-on-one',
                 
                 // Mentor information (include id)
                 mentor: {
@@ -516,14 +546,23 @@ exports.getSchedules = async (req, res) => {
                     image: schedMentor?.image || 'https://placehold.co/600x400'
                 },
                 
-                // Learner information (name, program, year level)
+                // Primary learner information (for display)
                 learner: {
-                    id: learner?._id || schedule.learner,
-                    name: learner?.name || 'Unknown Learner',
-                    program: learner?.program || 'N/A',
-                    yearLevel: learner?.yearLevel || 'N/A',
-                    image: learner?.image || 'https://placehold.co/600x400'
-                }
+                    id: primaryLearner?._id || learnerIds[0] || '',
+                    name: primaryLearner?.name || 'Unknown Learner',
+                    program: primaryLearner?.program || 'N/A',
+                    yearLevel: primaryLearner?.yearLevel || 'N/A',
+                    image: primaryLearner?.image || 'https://placehold.co/600x400'
+                },
+                
+                // All learners (for group sessions)
+                learners: validLearners.map(l => ({
+                    id: l._id,
+                    name: l.name,
+                    program: l.program,
+                    yearLevel: l.yearLevel,
+                    image: l.image
+                }))
             };
             
             if (schedDate.getTime() === today.getTime()) {
