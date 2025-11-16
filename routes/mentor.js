@@ -21,6 +21,7 @@ router.post('/send-existing-offer/group/:learnerId/:sessionId', jwtService.authe
 
 // GET routes
 router.get('/profile', jwtService.authenticateToken('mentor'), mentorController.getProfileInfo);
+router.get('/schedules/group', jwtService.authenticateToken('mentor'), mentorController.getGroupSessions); // More specific route must come first
 router.get('/schedules', jwtService.authenticateToken('mentor'), mentorController.getSchedules);
 router.get('/learners', jwtService.authenticateToken('mentor'), mentorController.getAllLearners);
 router.get('/learners/:id', jwtService.authenticateToken('mentor'), mentorController.getLearnerById);
@@ -28,13 +29,12 @@ router.get('/feedbacks', jwtService.authenticateToken('mentor'), mentorControlle
 router.get('/feedbacks/reviewer/:id', jwtService.authenticateToken('mentor'), mentorController.getReviewer);
 router.get('/files', jwtService.authenticateToken('mentor'), mentorController.getLearningMaterialsList);
 router.get('/files/:fileId', jwtService.authenticateToken('mentor'), mentorController.getLearningMaterial);
-router.get('/schedules/group', jwtService.authenticateToken('mentor'), mentorController.getGroupSessions)
 
 
 // DELETE routes
 router.delete('/files/:fileId', jwtService.authenticateToken('mentor'), mentorController.deleteLearningMaterial);
 
-// PATCH routes
-router.patch('/profile/edit', jwtService.authenticateToken('mentor'), mentorController.editProfile);
+// PATCH routes (you can add editProfile later if needed)
+// router.patch('/profile/edit', jwtService.authenticateToken('mentor'), mentorController.editProfile);
 
 module.exports = router;

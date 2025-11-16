@@ -34,7 +34,7 @@ app.use(cookieParser());
 
 // CORS configuration - MUST BE BEFORE ROUTES
 app.use(cors({
-    origin: process.env.FRONTEND_URL,
+    origin: 'http://localhost:3000',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

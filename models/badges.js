@@ -111,6 +111,10 @@ const BADGES = [
   }
 ];
 
+/**
+ * Machine-readable thresholds used by the evaluation engine.
+ * Metrics are computed from Schedules, Feedback, Forum*, and Mentor model.
+ */
 const BADGE_THRESHOLDS = [
   // sessions
   { key: 'first_session', all: [{ metric: 'sessionsCompleted', op: '>=', value: 1 }] },
