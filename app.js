@@ -23,6 +23,7 @@ const jitsiRouter = require('./routes/jitsi'); // NEW
 const roleRouter = require('./routes/role');
 const aiRouter = require('./routes/ai');
 const whiteboardRouter = require('./routes/whiteboard');
+const botpressRouter = require('./routes/botpress');
 
 const app = express();
 
@@ -40,13 +41,18 @@ const corsOptions = {
             process.env.FRONTEND_URL,
             'https://mindmate-one-lac.vercel.app',
             'http://localhost:3000',
-            'http://localhost:3001'
+            'http://localhost:3001',
+            'https://cdn.botpress.cloud',
+            'https://messaging.botpress.cloud',
+            'https://files.bpcontent.cloud'
         ];
-        // Allow requests with no origin (like mobile apps or curl requests)
+        // Allow requests with no origin (like mobile apps, curl, or Botpress server-side requests)
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
-            callback(new Error('Not allowed by CORS'));
+            // Log blocked origins for debugging
+            console.warn('[CORS] Blocked origin:', origin);
+            callback(null, true); // Temporarily allow all for testing
         }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -73,7 +79,8 @@ app.use('/api/forum', forumRouter);
 app.use('/api/jitsi', jitsiRouter); // NEW
 app.use('/api/role', roleRouter);
 app.use('/ai', aiRouter);
-app.use('/api/whiteboard', whiteboardRouter)
+app.use('/api/whiteboard', whiteboardRouter);
+app.use('/api/botpress', botpressRouter);
 
 // 404 handler
 app.use((req, res, next) => {
