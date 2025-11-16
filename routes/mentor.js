@@ -35,6 +35,6 @@ router.get('/files/:fileId', jwtService.authenticateToken('mentor'), mentorContr
 router.delete('/files/:fileId', jwtService.authenticateToken('mentor'), mentorController.deleteLearningMaterial);
 
 // PATCH routes (you can add editProfile later if needed)
-// router.patch('/profile/edit', jwtService.authenticateToken('mentor'), mentorController.editProfile);
+router.patch('/profile/edit', jwtService.authenticateToken('mentor'), mentorController.editProfile);
 
 module.exports = router;

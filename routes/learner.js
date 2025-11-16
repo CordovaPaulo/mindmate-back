@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const learnerController = require('../controllers/learner');
 const jwtService = require('../service/jwt');
+const analyticsController = require('../controllers/session-analytics');
+
+// Learner Analytics Dashboard
+router.get('/analytics', jwtService.authenticateToken('learner'), analyticsController.fetchLearnerDashboard);
 
 // POST routes
 router.post('/schedule/:id', jwtService.authenticateToken('learner'), learnerController.setSchedule);
