@@ -960,7 +960,7 @@ exports.sendGroupSessionOffer = async (req, res) => {
     }
     if (!toEmail) return res.status(400).json({ message: 'Learner email not found', code: 400 });
 
-    const appBase = process.env.FRONTEND_URL;
+    const appBase = process.env.BACKEND_URL;
     // explicitly mark this offer as a group offer (sessionType = 'group')
     const offerPayload = {
       // hyphenated id helps earlier heuristics detect group offers; also include explicit sessionType
@@ -1259,8 +1259,16 @@ exports.getGroupSessions = async (req, res) => {
       });
       if (!mentor) return res.status(404).json({ message: 'Mentor not found', code: 404 });
 
-      // Fetch group sessions for the mentor
-      const groupSessions = await Schedule.find({ mentorId: mentor._id, sessionType: 'group' });
+        // Fetch group sessions for the mentor (use `mentor` field from schema)
+        // Only include future sessions (date on or after today)
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const groupSessions = await Schedule.find({
+          mentor: mentor._id,
+          sessionType: 'group',
+          date: { $gte: today }
+        }).sort({ date: 1 });
 
       // Safe award badges
       await safeAwardMentorBadgesByUserId(mentor._id);
