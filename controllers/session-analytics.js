@@ -217,7 +217,7 @@ module.exports.fetchLearnerDashboard = async (req, res) => {
                 oneOnOneSessions,
                 groupSessions,
                 subjectsOfInterest,
-                schedules
+                schedules,
             }
         });
     } catch (err) {

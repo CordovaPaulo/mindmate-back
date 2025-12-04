@@ -20,6 +20,7 @@ router.get('/mentors/:id', jwtService.authenticateToken('learner'), learnerContr
 router.get('/schedules', jwtService.authenticateToken('learner'), learnerController.getSchedules);
 router.get('/feedback-given', jwtService.authenticateToken('learner'), learnerController.getFeedbacks);
 router.get('/learning-mats/:id', jwtService.authenticateToken('learner'), learnerController.getMentorLearningMaterials);
+router.get('/subjects', jwtService.authenticateToken('learner'), learnerController.getSubjectsBySpecializations);
 
 // Accept offer — support both GET (token in query) and POST (token in body)
 router.get('/offers/accept', learnerController.acceptOffer);
@@ -27,5 +28,9 @@ router.post('/offers/accept', learnerController.acceptOffer);
 
 // PATCH routes
 router.patch('/profile/edit', jwtService.authenticateToken('learner'), learnerController.editProfile);
+
+// router.get('/preset/:mentid', jwtService.authenticateToken('learner'), learnerController.getPresetSchedules);
+router.post('/preset/join/:presetId', jwtService.authenticateToken('learner'), learnerController.joinPresetSchedule);
+router.post('/preset/leave/:presetId', jwtService.authenticateToken('learner'), learnerController.quitPresetSchedule);
 
 module.exports = router;

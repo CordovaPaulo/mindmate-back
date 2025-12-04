@@ -10,12 +10,15 @@
     "setAltRole": "node ./scripts/setAltRoleNull.js",
     "roleBackFill": "node ./scripts/backfillRoleStatuses.js",
     "scheduleBackFill": "node ./scripts/backfillSchedules.js",
-    "rankBackFill": "node ./scripts/backfillRanks.js"
+    "rankBackFill": "node ./scripts/backfillRanks.js",
+    "subtospecfill": "node ./scripts/migrate-subjects-to-specialization.js",
+    "archivedBackfill": "node ./scripts/backfillArchived.js"
   },
   "dependencies": {
     "@getbrevo/brevo": "^3.0.1",
     "@google-cloud/storage": "^7.17.0",
     "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.86.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
     "cloudinary": "^2.7.0",

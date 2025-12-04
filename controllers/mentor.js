@@ -1,4 +1,5 @@
 const Learner = require('../models/Learner');
+const mongoose = require('mongoose');
 const Mentor = require('../models/Mentor');
 const User = require('../models/user');
 const Schedule = require('../models/Schedule');
@@ -12,6 +13,7 @@ const pusher = require('../service/pusher');
 const { schedulePayload } = require('../utils/realtimePayload');
 const Rank = require('../models/rank');
 const Badge = require('../models/badges');
+const presetSched = require('../models/presetSched');
 
 // Safe helper to resolve mentor and call awardMentorBadges without relying on userData variable
 async function safeAwardMentorBadgesByUserId(userOrMentorId) {
@@ -101,7 +103,7 @@ exports.setSchedule = async (req, res) => {
 
     const decoded = getValuesFromToken(req);
 
-    const learner = await Learner.findById(id);
+    const learner = await Learner.findOne({_id: id});
 
     if(!learner){
       return res.status(404).json({message: 'Learner not found', code: 404})
@@ -175,33 +177,41 @@ exports.getFeedbacks = async (req, res) => {
     }
 
     try {
+      // Fetch feedbacks without populate
       const feedbacks = await Feedback.find({ mentor: mentor._id });
-    //   if(feedbacks.length === 0){
-    //     return res.status(404).json({message: 'No feedbacks found', code: 404})
-    //   }
 
-      // Manually fetch learner details for each feedback
-      const feedbacksWithLearner = await Promise.all(
-        feedbacks.map(async (feedback) => {
-          const learner = await Learner.findById(feedback.learner).select('name program yearLevel image phoneNumber');
-          return {
-            _id: feedback._id,
-            mentor: feedback.mentor,
-            learner: learner || { name: 'Unknown', program: 'N/A', yearLevel: 'N/A', image: '' },
-            schedule: feedback.schedule,
-            rating: feedback.rating,
-            comments: feedback.comments,
-            createdAt: feedback.createdAt,
-            updatedAt: feedback.updatedAt
-          };
-        })
-      );
+      // Manually fetch learner and schedule data for each feedback
+      const transformedFeedbacks = await Promise.all(feedbacks.map(async (fb) => {
+        // Fetch learner details
+        const learner = await Learner.findById(fb.learner);
+        
+        // Fetch schedule details
+        const schedule = await Schedule.findById(fb.schedule);
+
+        return {
+          _id: fb._id,
+          rating: fb.rating,
+          comments: fb.comments,
+          evaluation: fb.evaluation,
+          createdAt: fb.createdAt,
+          updatedAt: fb.updatedAt,
+          // Add learner information
+          learnerName: learner?.name || 'Unknown',
+          learnerProgram: learner?.program || 'N/A',
+          learnerYearLevel: learner?.yearLevel || 'N/A',
+          learnerImage: learner?.image || '',
+          // Add specialization from schedule subject
+          specialization: schedule?.subject || 'N/A',
+          sessionDate: schedule?.date || null
+        };
+      }));
 
       // Safe award badges
       await safeAwardMentorBadgesByUserId(mentor._id);
 
-      res.status(200).json(feedbacksWithLearner);
+      res.status(200).json(transformedFeedbacks);
     } catch (error) {
+      console.error('getFeedbacks error:', error);
       res.status(500).json({message: 'Server error', code: 500})
     }
 }
@@ -245,20 +255,9 @@ exports.cancelSched = async (req, res) => {
             return res.status(403).json({ message: 'Not authorized to cancel this schedule', code: 403 });
         }
 
-        let mailResult = null;
-        try {
-            console.log(`[MENTOR CANCEL] Attempting to send cancellation email for schedule ${id}`);
-            mailResult = await mailingController.sendCancellationByMentor(id, mentor._id || decoded.id, reason);
-            console.log(`[MENTOR CANCEL] Email sent successfully for schedule ${id}`);
-        } catch (mailErr) {
-            console.error(`[MENTOR CANCEL ERROR] Failed to send cancellation email for schedule ${id}:`, {
-                error: mailErr.message,
-                stack: mailErr.stack,
-                scheduleId: id,
-                mentorId: mentor._id || decoded.id,
-                reason
-            });
-        }
+        const mailResult = await mailingController.sendCancellationByMentor(id, mentor._id || decoded.id, reason);
+        
+        console.log('[cancelSched] Cancellation email sent successfully:', mailResult);
 
         // Delete the schedule
         const scheduleFound = await Schedule.findByIdAndDelete(id);
@@ -411,7 +410,6 @@ exports.reschedSched = async (req, res) => {
 
         // send reschedule email to learner
        try {
-         console.log(`[MENTOR RESCHEDULE] Attempting to send reschedule email for schedule ${id}`);
          await mailingController.sendRescheduleByMentor(
            id,
            mentor._id || decoded.id,
@@ -419,17 +417,8 @@ exports.reschedSched = async (req, res) => {
            schedule.time,
            schedule.location
          );
-         console.log(`[MENTOR RESCHEDULE] Email sent successfully for schedule ${id}`);
        } catch (mailErr) {
-         console.error(`[MENTOR RESCHEDULE ERROR] Failed to send reschedule email for schedule ${id}:`, {
-           error: mailErr.message,
-           stack: mailErr.stack,
-           scheduleId: id,
-           mentorId: mentor._id || decoded.id,
-           newDate: schedule.date,
-           newTime: schedule.time,
-           newLocation: schedule.location
-         });
+         console.error('Error sending reschedule email (mentor):', mailErr);
        }
 
         // Notify learner via Pusher
@@ -470,26 +459,36 @@ exports.getSchedules = async (req, res) => {
         });
 
         if (!mentor) {
-            return res.status(404).json({ message: 'Mentor not found', code: 404 });
+            return res.status(404).json({ message: 'Mentor not found', mentor: mentor, code: 404 });
         }
 
-        // Fetch all schedules where this mentor is involved
-        const schedules = await Schedule.find({ mentor: mentor._id });
-
-        const todaySchedule = [];
-        const upcomingSchedule = [];
+        // Get today's date
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // Process each schedule
-        for (const schedule of schedules) {
-            const schedDate = parseDateOnly(schedule.date);
-            if (!schedDate) continue;
+        // Retrieve all schedules for this mentor
+        const schedules = await Schedule.find({
+            $or: [
+                { mentor: mentor._id },
+                { mentor: mentor.userId }
+            ]
+        });
 
-            console.log('Schedule ID:', schedule._id);
-            console.log('Learners:', schedule.learners);
+        console.log('Found schedules for mentor:', schedules.length);
+
+        // Split schedules and transform them (only today and upcoming)
+        const todaySchedule = [];
+        const upcomingSchedule = [];
+
+        for (const schedule of schedules) {
+            const schedDate = new Date(schedule.date);
+            schedDate.setHours(0, 0, 0, 0);
             
-            // Try different approaches to find mentor
+            console.log('Processing schedule:', schedule._id);
+            console.log('Mentor ID:', schedule.mentor);
+            console.log('Learner ID:', schedule.learner);
+            
+            // Try different approaches to find mentor and learner
             let schedMentor = await Mentor.findById(schedule.mentor);
             if (!schedMentor) {
                 schedMentor = await Mentor.findOne({ userId: schedule.mentor });
@@ -498,34 +497,21 @@ exports.getSchedules = async (req, res) => {
                 schedMentor = await Mentor.findOne({ _id: schedule.mentor });
             }
             
-            // Handle learners array (for both one-on-one and group sessions)
-            const learnerIds = schedule.learners || [];
-            const learnersData = await Promise.all(
-                learnerIds.map(async (learnerId) => {
-                    let learner = await Learner.findById(learnerId);
-                    if (!learner) {
-                        learner = await Learner.findOne({ userId: learnerId });
-                    }
-                    if (!learner) {
-                        learner = await Learner.findOne({ _id: learnerId });
-                    }
-                    return learner;
-                })
-            );
-            
-            // Filter out null learners
-            const validLearners = learnersData.filter(l => l !== null);
+            let learner = await Learner.findById(schedule.learner);
+            if (!learner) {
+                learner = await Learner.findOne({ userId: schedule.learner });
+            }
+            if (!learner) {
+                learner = await Learner.findOne({ _id: schedule.learner });
+            }
             
             console.log('Found mentor:', schedMentor?.name || 'Not found');
-            console.log('Found learners:', validLearners.map(l => l?.name).join(', ') || 'None found');
+            console.log('Found learner:', learner?.name || 'Not found');
             
             // Skip past schedules for mentor (no schedForReview)
             if (schedDate < today) {
                 continue;
             }
-
-            // For one-on-one sessions, use the first learner
-            const primaryLearner = validLearners[0];
 
             // Simplified response payload with only required information
             const transformedSchedule = {
@@ -535,7 +521,7 @@ exports.getSchedules = async (req, res) => {
                 time: schedule.time,
                 location: schedule.location,
                 subject: schedule.subject,
-                sessionType: schedule.sessionType || 'one-on-one',
+                type: schedule.type,
                 
                 // Mentor information (include id)
                 mentor: {
@@ -546,23 +532,14 @@ exports.getSchedules = async (req, res) => {
                     image: schedMentor?.image || 'https://placehold.co/600x400'
                 },
                 
-                // Primary learner information (for display)
+                // Learner information (name, program, year level)
                 learner: {
-                    id: primaryLearner?._id || learnerIds[0] || '',
-                    name: primaryLearner?.name || 'Unknown Learner',
-                    program: primaryLearner?.program || 'N/A',
-                    yearLevel: primaryLearner?.yearLevel || 'N/A',
-                    image: primaryLearner?.image || 'https://placehold.co/600x400'
-                },
-                
-                // All learners (for group sessions)
-                learners: validLearners.map(l => ({
-                    id: l._id,
-                    name: l.name,
-                    program: l.program,
-                    yearLevel: l.yearLevel,
-                    image: l.image
-                }))
+                    id: learner?._id || schedule.learner, // Added learner id for consistency
+                    name: learner?.name || 'Unknown Learner',
+                    program: learner?.program || 'N/A',
+                    yearLevel: learner?.yearLevel || 'N/A',
+                    image: learner?.image || 'https://placehold.co/600x400'
+                }
             };
             
             if (schedDate.getTime() === today.getTime()) {
@@ -644,13 +621,7 @@ exports.getReviewer = async (req, res) => {
         // Safe award badges
         await safeAwardMentorBadgesByUserId(decoded.id);
 
-        // Return the actual learner data that the frontend needs
-        res.status(200).json({ 
-            name: learner.name,
-            course: learner.program,
-            year: learner.yearLevel,
-            image: learner.image || ''
-        });
+        res.status(200).json({ reviewer: learner.reviewer });
     } catch (error) {
         console.error('Error in getReviewer:', error);
         res.status(500).json({ message: error.message, code: 500 });
@@ -668,27 +639,14 @@ exports.sendReminder = async (req, res) => {
     // verify mentor
     const mentor = await Mentor.findOne({ $or: [{ _id: decoded.id }, { userId: decoded.id }] });
     if (!mentor) return res.status(404).json({ message: 'Mentor not found', code: 404 });
-    
-    try {
-      console.log(`[MENTOR REMINDER] Attempting to send reminder for schedule ${id}`);
-      await mailingController.sendScheduleReminder(id, mentor._id || decoded.id);
-      console.log(`[MENTOR REMINDER] Reminder sent successfully for schedule ${id}`);
-    } catch (mailErr) {
-      console.error(`[MENTOR REMINDER ERROR] Failed to send reminder for schedule ${id}:`, {
-        error: mailErr.message,
-        stack: mailErr.stack,
-        scheduleId: id,
-        mentorId: mentor._id || decoded.id
-      });
-      return res.status(500).json({ message: 'Failed to send reminder email', error: mailErr.message, code: 500 });
-    }
+    await mailingController.sendScheduleReminder(id, mentor._id || decoded.id);
 
     // Safe award badges
     await safeAwardMentorBadgesByUserId(mentor._id);
 
     res.status(200).json({ message: 'Reminder sent', code: 200 });
   } catch (error) {
-    console.error('[MENTOR REMINDER CRITICAL] Error in sendReminder:', error);
+    console.error('Error sending reminder (mentor):', error);
     res.status(500).json({ message: error.message, code: 500 });
   }
 }
@@ -794,7 +752,10 @@ exports.sendOffer = async (req, res) => {
         if (!toEmail) return res.status(400).json({ message: 'Learner email not found', code: 400 });
 
         // build accept offer link (tokenized payload in query)
-        const apiBase = process.env.BACKEND_URL;
+        const appBase =
+        process.env.FRONTEND_URL ||
+        process.env.APP_URL ||
+        'http://localhost:3001';
         const offerPayload = {
         offerId: Date.now().toString(), // simple unique id; replace with DB id if you persist offers
         mentorId: String(mentor._id),
@@ -805,7 +766,7 @@ exports.sendOffer = async (req, res) => {
         subject
         };
         const token = Buffer.from(JSON.stringify(offerPayload)).toString('base64url');
-        const acceptLink = `${apiBase}/api/learner/offers/accept?token=${token}`;
+        const acceptLink = `${appBase}/api/learner/offers/accept?token=${token}`;
 
         // email contents
         const emailSubject = `Offer: ${subject} with ${mentor.name}`;
@@ -849,27 +810,14 @@ exports.sendOffer = async (req, res) => {
     <p>Best regards,<br/>MindMate Team</p>
     `.trim();
 
-        let mailResult = null;
-        try {
-          console.log(`[MENTOR OFFER] Attempting to send offer email to learner ${learnerId}`);
-          mailResult = await mailingController.sendEmailNotification(
-            toEmail,
-            emailSubject,
-            emailText,
-            emailHtml
-          );
-          console.log(`[MENTOR OFFER] Offer email sent successfully to ${toEmail}`);
-        } catch (mailErr) {
-          console.error(`[MENTOR OFFER ERROR] Failed to send offer email to learner ${learnerId}:`, {
-            error: mailErr.message,
-            stack: mailErr.stack,
-            learnerId,
-            mentorId: mentor._id,
-            subject,
-            toEmail
-          });
-          return res.status(500).json({ message: 'Failed to send offer email', error: mailErr.message, code: 500 });
-        }
+        const mailResult = await mailingController.sendEmailNotification(
+        toEmail,
+        emailSubject,
+        emailText,
+        emailHtml
+        );
+
+        console.log('[sendOffer] Email sent successfully:', mailResult);
 
         // Safe award badges
         await safeAwardMentorBadgesByUserId(mentor._id);
@@ -960,7 +908,7 @@ exports.sendGroupSessionOffer = async (req, res) => {
     }
     if (!toEmail) return res.status(400).json({ message: 'Learner email not found', code: 400 });
 
-    const appBase = process.env.BACKEND_URL;
+    const appBase = process.env.BACKEND_URL || process.env.APP_URL || 'http://localhost:3001';
     // explicitly mark this offer as a group offer (sessionType = 'group')
     const offerPayload = {
       // hyphenated id helps earlier heuristics detect group offers; also include explicit sessionType
@@ -1023,28 +971,14 @@ ${message ? `<p><strong>Message from mentor:</strong><br/>${message.replace(/\n/
 <p>Best regards,<br/>MindMate Team</p>
     `.trim();
 
-    let mailResult = null;
-    try {
-      console.log(`[MENTOR GROUP OFFER] Attempting to send group offer email to learner ${learnerId}`);
-      mailResult = await mailingController.sendEmailNotification(
-        toEmail,
-        emailSubject,
-        emailText,
-        emailHtml
-      );
-      console.log(`[MENTOR GROUP OFFER] Group offer email sent successfully to ${toEmail}`);
-    } catch (mailErr) {
-      console.error(`[MENTOR GROUP OFFER ERROR] Failed to send group offer to learner ${learnerId}:`, {
-        error: mailErr.message,
-        stack: mailErr.stack,
-        learnerId,
-        mentorId: mentor._id,
-        subject,
-        groupName: groupName || 'N/A',
-        toEmail
-      });
-      return res.status(500).json({ message: 'Failed to send group offer email', error: mailErr.message, code: 500 });
-    }
+    const mailResult = await mailingController.sendEmailNotification(
+      toEmail,
+      emailSubject,
+      emailText,
+      emailHtml
+    );
+
+    console.log('[sendGroupSessionOffer] Email sent successfully:', mailResult);
 
     // notify via pusher if learner has a linked userId
     try {
@@ -1107,6 +1041,14 @@ exports.sendExistingGroupSessionOffer = async (req, res) => {
     let learner = await Learner.findOne({ $or: [{ _id: learnerId }, { userId: learnerId }] });
     if (!learner) return res.status(404).json({ message: 'Learner not found', code: 404 });
 
+    // If the session has a maxParticipants set, ensure there's available capacity
+    if (typeof session.maxParticipants === 'number' && Number.isFinite(session.maxParticipants)) {
+      const current = Array.isArray(session.learners) ? session.learners.length : 0;
+      if (current >= Number(session.maxParticipants)) {
+        return res.status(409).json({ message: 'Group session is already full', code: 409 });
+      }
+    }
+
     // resolve recipient email
     let toEmail = learner.email;
     if (!toEmail && learner.userId) {
@@ -1134,8 +1076,8 @@ exports.sendExistingGroupSessionOffer = async (req, res) => {
     };
 
     const token = Buffer.from(JSON.stringify(offerPayload)).toString('base64url');
-    const apiBase = process.env.BACKEND_URL;
-    const acceptLink = `${apiBase}/api/learner/offers/accept?token=${token}`;
+    const appBase = process.env.BACKEND_URL || process.env.APP_URL || 'http://localhost:3001';
+    const acceptLink = `${appBase}/api/learner/offers/accept?token=${token}`;
 
     const prettyDate = new Date(offerPayload.date).toLocaleDateString();
     const emailSubject = `Group Invite: ${offerPayload.subject} - ${offerPayload.groupName || 'Group Study Session'}`;
@@ -1183,28 +1125,14 @@ ${req.body?.message ? `<p><strong>Message from mentor:</strong><br/>${req.body.m
 <p>Best regards,<br/>MindMate Team</p>
     `.trim();
 
-    let mailResult = null;
-    try {
-      console.log(`[MENTOR EXISTING GROUP] Attempting to send existing group invite to learner ${learnerId}`);
-      mailResult = await mailingController.sendEmailNotification(
-        toEmail,
-        emailSubject,
-        emailText,
-        emailHtml
-      );
-      console.log(`[MENTOR EXISTING GROUP] Invite email sent successfully to ${toEmail}`);
-    } catch (mailErr) {
-      console.error(`[MENTOR EXISTING GROUP ERROR] Failed to send invite to learner ${learnerId}:`, {
-        error: mailErr.message,
-        stack: mailErr.stack,
-        learnerId,
-        sessionId,
-        scheduleId: offerPayload.scheduleId,
-        mentorId: mentor._id,
-        toEmail
-      });
-      return res.status(500).json({ message: 'Failed to send invite email', error: mailErr.message, code: 500 });
-    }
+    const mailResult = await mailingController.sendEmailNotification(
+      toEmail,
+      emailSubject,
+      emailText,
+      emailHtml
+    );
+
+    console.log('[sendExistingGroupSessionOffer] Email sent successfully:', mailResult);
 
     // send pusher event to learner (best-effort)
     try {
@@ -1247,7 +1175,7 @@ ${req.body?.message ? `<p><strong>Message from mentor:</strong><br/>${req.body.m
 exports.getGroupSessions = async (req, res) => {
   const decoded = getValuesFromToken(req);
   if (!decoded || !decoded.id) {
-    return res.status(403).json({ message: 'Invalid token', code: 403 });
+      return res.status(403).json({ message: 'Invalid token', code: 403 });
   }
   try {
       // Find mentor by either _id or userId
@@ -1259,408 +1187,301 @@ exports.getGroupSessions = async (req, res) => {
       });
       if (!mentor) return res.status(404).json({ message: 'Mentor not found', code: 404 });
 
-        // Fetch group sessions for the mentor (use `mentor` field from schema)
-        // Only include future sessions (date on or after today)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+      // Fetch group sessions for the mentor (use 'mentor' field, not 'mentorId')
+      const groupSessions = await Schedule.find({ 
+          mentor: mentor._id, 
+          sessionType: 'group' 
+      });
 
-        const groupSessions = await Schedule.find({
-          mentor: mentor._id,
-          sessionType: 'group',
-          date: { $gte: today }
-        }).sort({ date: 1 });
+      // Transform sessions to include learner details
+      const transformedSessions = [];
+      for (const session of groupSessions) {
+          const learnerDetails = [];
+          if (Array.isArray(session.learners)) {
+              for (const learnerId of session.learners) {
+                  const learner = await Learner.findById(learnerId);
+                  if (learner) {
+                      learnerDetails.push({
+                          _id: learner._id,
+                          name: learner.name || 'Unknown'
+                      });
+                  }
+              }
+          }
+
+          transformedSessions.push({
+              _id: session._id,
+              subject: session.subject,
+              date: session.date,
+              time: session.time,
+              location: session.location,
+              sessionType: session.sessionType,
+              groupName: session.groupName || null,
+              maxParticipants: session.maxParticipants || null,
+              learners: learnerDetails
+          });
+      }
 
       // Safe award badges
       await safeAwardMentorBadgesByUserId(mentor._id);
 
-      return res.status(200).json({ message: 'Group sessions fetched', groupSessions, code: 200 });
+      return res.status(200).json({ message: 'Group sessions fetched', groupSessions: transformedSessions, code: 200 });
   } catch (error) {
       console.error('getGroupSessions error:', error);
       return res.status(500).json({ message: error.message, code: 500 });
   }
 }
 
-exports.editProfile = async (req, res) => {
+exports.createPresetSched = async (req, res) => {
   const decoded = getValuesFromToken(req);
-
   if (!decoded || !decoded.id) {
-      return res.status(403).json({ message: 'Invalid token', code: 403 });
+    return res.status(403).json({ message: 'Invalid token', code: 403 });
   }
 
   try {
-      // Find the mentor first to ensure they exist
-      const existingMentor = await Mentor.findOne({
-          $or: [{ _id: decoded.id }, { userId: decoded.id }]
+    // First, find the mentor to ensure we use the correct mentor._id
+    const mentor = await Mentor.findOne({
+      $or: [
+        { _id: decoded.id },
+        { userId: decoded.id }
+      ]
+    });
+
+    if (!mentor) {
+      return res.status(404).json({ message: 'Mentor not found', code: 404 });
+    }
+
+    // Strict limit check: count existing preset schedules for this mentor
+    const presetSchedCount = await presetSched.countDocuments({ mentor: mentor._id });
+    if (presetSchedCount >= 3) {
+      return res.status(400).json({ 
+        message: 'Preset schedule limit reached. You can only create a maximum of 3 preset schedules.', 
+        currentCount: presetSchedCount,
+        maxAllowed: 3,
+        code: 400 
       });
+    }
 
-      if (!existingMentor) {
-          return res.status(404).json({ message: 'Mentor not found', code: 404 });
+    const { days, time, subject, specialization, course } = req.body;
+
+    // Validate required fields
+    if (!specialization || !course) {
+      return res.status(400).json({ message: 'specialization and course are required', code: 400 });
+    }
+
+    // Validate course enum
+    if (!['BSIT', 'BSCS', 'BSEMC'].includes(course)) {
+      return res.status(400).json({ message: 'course must be BSIT, BSCS, or BSEMC', code: 400 });
+    }
+
+    // Accept either a single day string or an array of day strings
+    const dayArray = Array.isArray(days) ? days : (typeof days === 'string' ? [days] : []);
+    if (dayArray.length === 0 || !time || !subject) {
+      return res.status(400).json({ message: 'days (string or array), time, and subject are required', code: 400 });
+    }
+
+    // ensure participants is defined (optional list of learner ids)
+    const participants = Array.isArray(req.body.participants) ? req.body.participants : [];
+
+    // Resolve allowed enum values from the presetSched model (falls back to lowercase names)
+    const schemaEnumValues = Array.isArray(presetSched.schema.path('days')?.enumValues)
+      ? presetSched.schema.path('days').enumValues
+      : ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+
+    // Map incoming day names case-insensitively to the schema's enum values
+    const normalizedDays = [];
+    for (const d of dayArray) {
+      const match = schemaEnumValues.find(ev => String(ev).toLowerCase() === String(d).toLowerCase());
+      if (!match) {
+        return res.status(400).json({ message: `Invalid day value: ${d}. Allowed: ${schemaEnumValues.join(', ')}`, code: 400 });
       }
+      normalizedDays.push(match);
+    }
 
-      // Define allowed fields (excluding: name, email, userId, accountStatus, image, aveRating, credentials, credentialsFolderUrl, verified)
-      const allowedFields = [
-          'sex', 'program', 'yearLevel', 
-          'phoneNumber', 'bio', 'exp', 'address', 
-          'modality', 'proficiency', 'subjects', 'availability', 'style', 'sessionDur'
-      ];
+    // Create a single preset schedule document containing the array of days
+    const doc = new presetSched({
+      mentor: mentor._id,
+      mentorName: mentor.name,
+      days: normalizedDays,
+      time,
+      subject,
+      specialization,
+      course,
+      participants
+    });
+    await doc.save();
 
-      const updates = {};
-      const errors = [];
-
-      for (const field of allowedFields) {
-          if (req.body[field] !== undefined) {
-              const value = req.body[field];
-
-              switch (field) {
-                  case 'sex':
-                      if (!['male', 'female'].includes(value)) {
-                          errors.push('Sex must be either "male" or "female"');
-                      } else {
-                          updates.sex = value;
-                      }
-                      break;
-
-                  case 'program':
-                      if (!['BSIT', 'BSCS', 'BSEMC'].includes(value)) {
-                          errors.push('Program must be one of: BSIT, BSCS, BSEMC');
-                      } else {
-                          updates.program = value;
-                      }
-                      break;
-
-                  case 'yearLevel':
-                      if (!['1st year', '2nd year', '3rd year', '4th year', 'graduate'].includes(value)) {
-                          errors.push('Year level must be one of: 1st year, 2nd year, 3rd year, 4th year, graduate');
-                      } else {
-                          updates.yearLevel = value;
-                      }
-                      break;
-
-                  case 'phoneNumber':
-                      const phoneRegex = /^\d{11}$/;
-                      if (typeof value !== 'string' || !phoneRegex.test(value)) {
-                          errors.push('Phone number must be exactly 11 digits');
-                      } else {
-                          updates.phoneNumber = value;
-                      }
-                      break;
-
-                  case 'bio':
-                  case 'exp':
-                  case 'address':
-                      if (typeof value !== 'string' || value.trim().length === 0) {
-                          errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} must be a non-empty string`);
-                      } else {
-                          updates[field] = value.trim();
-                      }
-                      break;
-
-                  case 'modality':
-                      if (!['online', 'in-person', 'hybrid'].includes(value)) {
-                          errors.push('Modality must be one of: online, in-person, hybrid');
-                      } else {
-                          updates.modality = value;
-                      }
-                      break;
-
-                  case 'proficiency':
-                      if (!['beginner', 'intermediate', 'advanced'].includes(value)) {
-                          errors.push('Proficiency must be one of: beginner, intermediate, advanced');
-                      } else {
-                          updates.proficiency = value;
-                      }
-                      break;
-
-                  case 'subjects':
-                      if (!Array.isArray(value) || value.length === 0) {
-                          errors.push('Subjects must be a non-empty array');
-                      } else if (!value.every(s => typeof s === 'string' && s.trim().length > 0)) {
-                          errors.push('All subjects must be non-empty strings');
-                      } else {
-                          updates.subjects = value.map(s => s.trim());
-                      }
-                      break;
-
-                  case 'availability':
-                      const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-                      if (!Array.isArray(value) || value.length === 0) {
-                          errors.push('Availability must be a non-empty array');
-                      } else if (!value.every(day => validDays.includes(day))) {
-                          errors.push('All availability days must be valid weekdays (monday-sunday)');
-                      } else {
-                          updates.availability = value;
-                      }
-                      break;
-
-                  case 'style':
-                      const validStyles = ['lecture-based', 'interactive-discussion', 'q-and-a-discussion', 
-                                          'demonstrations', 'project-based', 'step-by-step-discussion'];
-                      if (!Array.isArray(value) || value.length === 0) {
-                          errors.push('Style must be a non-empty array');
-                      } else if (!value.every(s => validStyles.includes(s))) {
-                          errors.push('All learning styles must be valid options');
-                      } else {
-                          updates.style = value;
-                      }
-                      break;
-
-                  case 'sessionDur':
-                      if (!['1hr', '2hrs', '3hrs'].includes(value)) {
-                          errors.push('Session duration must be one of: 1hr, 2hrs, 3hrs');
-                      } else {
-                          updates.sessionDur = value;
-                      }
-                      break;
-              }
-          }
-      }
-
-      // Return validation errors if any
-      if (errors.length > 0) {
-          return res.status(400).json({ 
-              message: 'Validation failed', 
-              errors, 
-              code: 400 
-          });
-      }
-
-      // Check if there are any fields to update
-      if (Object.keys(updates).length === 0) {
-          return res.status(400).json({ 
-              message: 'No valid fields provided for update', 
-              code: 400 
-          });
-      }
-
-      // Perform the update
-      const mentor = await Mentor.findOneAndUpdate(
-          { $or: [{ _id: decoded.id }, { userId: decoded.id }] },
-          { $set: updates },
-          { new: true, runValidators: true }
-      );
-
-      if (!mentor) {
-          return res.status(404).json({ message: 'Mentor not found', code: 404 });
-      }
-
-      // Award badges after profile update
-      await safeAwardMentorBadgesByUserId(mentor._id);
-
-      return res.status(200).json({ 
-          message: 'Profile updated successfully', 
-          mentor, 
-          code: 200 
-      });
+    return res.status(201).json({ message: 'Preset schedule created', created: doc, count: 1, code: 201 });
   } catch (error) {
-      console.error('editProfile error (mentor):', error);
-      
-      // Handle mongoose validation errors
-      if (error.name === 'ValidationError') {
-          const validationErrors = Object.values(error.errors).map(err => err.message);
-          return res.status(400).json({ 
-              message: 'Validation failed', 
-              errors: validationErrors, 
-              code: 400 
-          });
-      }
-      
-      return res.status(500).json({ message: 'Internal server error', code: 500 });
+    console.error('createPresetSched error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
+  }
+};
+
+exports.getPresetScheds = async (req, res) => {
+  const decoded = getValuesFromToken(req);
+  if (!decoded || !decoded.id) {
+    return res.status(403).json({ message: 'Invalid token', code: 403 });
+  }
+
+  try {
+    const mentor = await Mentor.findOne({
+      $or: [
+        { _id: decoded.id },
+        { userId: decoded.id }
+      ]
+    });
+    if (!mentor) {
+      return res.status(404).json({ message: 'Mentor not found', code: 404 });
+    }
+    const scheds = await presetSched.find({ mentor: mentor._id });
+
+    return res.status(200).json({ message: 'Preset schedules fetched', presetSchedules: scheds, count: scheds.length, code: 200 });
+  } catch (error) {
+    console.error('getPresetScheds error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
   }
 }
 
-// exports.editProfile = async (req, res) => {
-//   const decoded = getValuesFromToken(req);
+exports.updatePresetSched = async (req, res) => {
+  const decoded = getValuesFromToken(req);
+  if (!decoded || !decoded.id) {
+    return res.status(403).json({ message: 'Invalid token', code: 403 });
+  }
 
-//   if (!decoded || !decoded.id) {
-//     return res.status(403).json({ message: 'Invalid token', code: 403 });
-//   }
+  try {
+    const { id } = req.params;
+    const mentor = await Mentor.findOne({
+      $or: [
+        { _id: decoded.id },
+        { userId: decoded.id }
+      ]
+    });
 
-//   try {
-//       // Find the mentor first to ensure they exist
-//       const existingMentor = await Mentor.findOne({
-//           $or: [{ _id: decoded.id }, { userId: decoded.id }]
-//       });
+    if (!mentor) {
+      return res.status(404).json({ message: 'Mentor not found', code: 404 });
+    }
 
-//       if (!existingMentor) {
-//           return res.status(404).json({ message: 'Mentor not found', code: 404 });
-//       }
+    const schedule = await presetSched.findById(id);
+    if (!schedule) {
+      return res.status(404).json({ message: 'Preset schedule not found', code: 404 });
+    }
 
-//       const allowedFields = [
-//           'sex', 'program', 'yearLevel', 
-//           'phoneNumber', 'bio', 'exp', 'address', 
-//           'modality', 'proficiency', 'subjects', 
-//           'availability', 'style', 'sessionDur'
-//       ];
+    // Verify ownership
+    if (String(schedule.mentor) !== String(mentor._id)) {
+      return res.status(403).json({ message: 'Not authorized to update this schedule', code: 403 });
+    }
 
-//       const updates = {};
-//       const errors = [];
+    const { days, time, subject, specialization, course } = req.body;
 
-//       for (const field of allowedFields) {
-//           if (req.body[field] !== undefined) {
-//               const value = req.body[field];
+    // Update fields if provided
+    if (days !== undefined) {
+      const dayArray = Array.isArray(days) ? days : (typeof days === 'string' ? [days] : []);
+      if (dayArray.length > 0) {
+        const schemaEnumValues = Array.isArray(presetSched.schema.path('days')?.enumValues)
+          ? presetSched.schema.path('days').enumValues
+          : ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
 
-//               switch (field) {
-//                   case 'sex':
-//                       if (!['male', 'female'].includes(value)) {
-//                           errors.push('Sex must be either "male" or "female"');
-//                       } else {
-//                           updates.sex = value;
-//                       }
-//                       break;
+        const normalizedDays = [];
+        for (const d of dayArray) {
+          const match = schemaEnumValues.find(ev => String(ev).toLowerCase() === String(d).toLowerCase());
+          if (!match) {
+            return res.status(400).json({ message: `Invalid day value: ${d}`, code: 400 });
+          }
+          normalizedDays.push(match);
+        }
+        schedule.days = normalizedDays;
+      }
+    }
+    if (time) schedule.time = time;
+    if (subject) schedule.subject = subject;
+    if (specialization) schedule.specialization = specialization;
+    if (course) {
+      if (!['BSIT', 'BSCS', 'BSEMC'].includes(course)) {
+        return res.status(400).json({ message: 'course must be BSIT, BSCS, or BSEMC', code: 400 });
+      }
+      schedule.course = course;
+    }
 
-//                   case 'program':
-//                       if (!['BSIT', 'BSCS', 'BSEMC'].includes(value)) {
-//                           errors.push('Program must be one of: BSIT, BSCS, BSEMC');
-//                       } else {
-//                           updates.program = value;
-//                       }
-//                       break;
+    await schedule.save();
+    return res.status(200).json({ message: 'Preset schedule updated', schedule, code: 200 });
+  } catch (error) {
+    console.error('updatePresetSched error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
+  }
+}
 
-//                   case 'yearLevel':
-//                       if (!['1st year', '2nd year', '3rd year', '4th year', 'graduate'].includes(value)) {
-//                           errors.push('Year level must be one of: 1st year, 2nd year, 3rd year, 4th year, graduate');
-//                       } else {
-//                           updates.yearLevel = value;
-//                       }
-//                       break;
+exports.deletePresetSched = async (req, res) => {
+  const decoded = getValuesFromToken(req);
+  if (!decoded || !decoded.id) {
+    return res.status(403).json({ message: 'Invalid token', code: 403 });
+  }
 
-//                   case 'phoneNumber':
-//                       const phoneRegex = /^\d{11}$/;
-//                       if (typeof value !== 'string' || !phoneRegex.test(value)) {
-//                           errors.push('Phone number must be exactly 11 digits');
-//                       } else {
-//                           updates.phoneNumber = value;
-//                       }
-//                       break;
+  try {
+    const { id } = req.params;
+    const mentor = await Mentor.findOne({
+      $or: [
+        { _id: decoded.id },
+        { userId: decoded.id }
+      ]
+    });
 
-//                   case 'bio':
-//                   case 'exp':
-//                   case 'address':
-//                       if (typeof value !== 'string' || value.trim().length === 0) {
-//                           errors.push(`${field.charAt(0).toUpperCase() + field.slice(1)} must be a non-empty string`);
-//                       } else {
-//                           updates[field] = value.trim();
-//                       }
-//                       break;
+    if (!mentor) {
+      return res.status(404).json({ message: 'Mentor not found', code: 404 });
+    }
 
-//                   case 'modality':
-//                       if (!['online', 'in-person', 'hybrid'].includes(value)) {
-//                           errors.push('Modality must be one of: online, in-person, hybrid');
-//                       } else {
-//                           updates.modality = value;
-//                       }
-//                       break;
+    const schedule = await presetSched.findById(id);
+    if (!schedule) {
+      return res.status(404).json({ message: 'Preset schedule not found', code: 404 });
+    }
 
-//                   case 'proficiency':
-//                       if (!['beginner', 'intermediate', 'advanced'].includes(value)) {
-//                           errors.push('Proficiency must be one of: beginner, intermediate, advanced');
-//                       } else {
-//                           updates.proficiency = value;
-//                       }
-//                       break;
+    // Verify ownership
+    if (String(schedule.mentor) !== String(mentor._id)) {
+      return res.status(403).json({ message: 'Not authorized to delete this schedule', code: 403 });
+    }
 
-//                   case 'subjects':
-//                       if (!Array.isArray(value) || value.length === 0) {
-//                           errors.push('Subjects must be a non-empty array');
-//                       } else if (!value.every(s => typeof s === 'string' && s.trim().length > 0)) {
-//                           errors.push('All subjects must be non-empty strings');
-//                       } else {
-//                           updates.subjects = value.map(s => s.trim());
-//                       }
-//                       break;
+    await schedule.deleteOne();
+    return res.status(200).json({ message: 'Preset schedule deleted', code: 200 });
+  } catch (error) {
+    console.error('deletePresetSched error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
+  }
+}
 
-//                   case 'availability':
-//                       const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-//                       if (!Array.isArray(value) || value.length === 0) {
-//                           errors.push('Availability must be a non-empty array');
-//                       } else if (!value.every(day => validDays.includes(day))) {
-//                           errors.push('All availability days must be valid weekdays (monday-sunday)');
-//                       } else {
-//                           updates.availability = value;
-//                       }
-//                       break;
+exports.getSubjectsBySpecializations = async (req, res) => {
+  try {
+    const { specializations } = req.query;
+    
+    if (!specializations) {
+      return res.status(400).json({ message: 'Specializations parameter is required', code: 400 });
+    }
 
-//                   case 'style':
-//                       const validStyles = ['lecture-based', 'interactive-discussion', 'q-and-a-discussion', 
-//                                           'demonstrations', 'project-based', 'step-by-step-discussion'];
-//                       if (!Array.isArray(value) || value.length === 0) {
-//                           errors.push('Style must be a non-empty array');
-//                       } else if (!value.every(s => validStyles.includes(s))) {
-//                           errors.push('All teaching styles must be valid options');
-//                       } else {
-//                           updates.style = value;
-//                       }
-//                       break;
+    // Parse specializations (can be comma-separated string or JSON array)
+    let specializationList;
+    if (typeof specializations === 'string') {
+      try {
+        specializationList = JSON.parse(specializations);
+      } catch {
+        specializationList = specializations.split(',').map(s => s.trim());
+      }
+    } else {
+      specializationList = specializations;
+    }
 
-//                   case 'sessionDur':
-//                       if (!['1hr', '2hrs', '3hrs'].includes(value)) {
-//                           errors.push('Session duration must be one of: 1hr, 2hrs, 3hrs');
-//                       } else {
-//                           updates.sessionDur = value;
-//                       }
-//                       break;
-//               }
-//           }
-//       }
+    if (!Array.isArray(specializationList) || specializationList.length === 0) {
+      return res.status(400).json({ message: 'Invalid specializations format', code: 400 });
+    }
 
-//       // Return validation errors if any
-//       if (errors.length > 0) {
-//           return res.status(400).json({ 
-//               message: 'Validation failed', 
-//               errors, 
-//               code: 400 
-//           });
-//       }
+    const Subject = require('../models/Subject');
+    
+    // Find all subjects matching the specializations
+    const subjects = await Subject.find({
+      specialization: { $in: specializationList }
+    }).lean();
 
-//       // Check if there are any fields to update
-//       if (Object.keys(updates).length === 0) {
-//           return res.status(400).json({ 
-//               message: 'No valid fields provided for update', 
-//               code: 400 
-//           });
-//       }
-
-//       // Perform the update
-//       const mentor = await Mentor.findOneAndUpdate(
-//           { $or: [{ _id: decoded.id }, { userId: decoded.id }] },
-//           { $set: updates },
-//           { new: true, runValidators: true }
-//       );
-
-//       if (!mentor) {
-//           return res.status(404).json({ message: 'Mentor not found', code: 404 });
-//       }
-
-//       // Safe award badges
-//       await safeAwardMentorBadgesByUserId(mentor._id);
-
-//       return res.status(200).json({ 
-//           message: 'Profile updated successfully', 
-//           mentor, 
-//           code: 200 
-//       });
-//   } catch (error) {
-//       console.error('editProfile error:', error);
-      
-//       // Handle mongoose validation errors
-//       if (error.name === 'ValidationError') {
-//           const validationErrors = Object.values(error.errors).map(err => err.message);
-//           return res.status(400).json({ 
-//               message: 'Validation failed', 
-//               errors: validationErrors, 
-//               code: 400 
-//           });
-//       }
-      
-//       // Handle duplicate key errors
-//       if (error.code === 11000) {
-//           const field = Object.keys(error.keyPattern)[0];
-//           return res.status(409).json({ 
-//               message: `${field} already exists`, 
-//               code: 409 
-//           });
-//       }
-      
-//       return res.status(500).json({ message: 'Internal server error', code: 500 });
-//   }
-// }
+    return res.status(200).json({ subjects });
+  } catch (error) {
+    console.error('getSubjectsBySpecializations error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
+  }
+}

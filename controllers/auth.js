@@ -12,10 +12,35 @@ const mailingController = require('./mailing');
 const VerificationToken = require('../models/VerificationToken');
 const crypto = require('crypto');
 const Rank = require('../models/rank');
-// const APP_BASE = (process.env.FRONTEND_URL || process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/,'');
-// const API_BASE = (process.env.BACKEND_URL || process.env.API_URL || 'http://localhost:5000').replace(/\/+$/,'');
+const supabaseService = require('../service/supabase');
 
-// Helper: send role confirmation email with verify/unverify links
+/**
+ * Helper function to get user personal information from Supabase students table
+ * @param {string} email - User's email address
+ * @returns {Object} Personal information from Supabase (address, phoneNumber, sex, yearLevel, program)
+ */
+async function getUserPersonalInfoFromSupabase(email) {
+  try {
+    const { data, error } = await supabaseService.findOne('students', { email });
+    
+    if (error || !data) {
+      console.error('Failed to fetch student from Supabase:', error);
+      return null;
+    }
+
+    return {
+      address: data.address || null,
+      phoneNumber: data.contactNo || null,
+      sex: data.sex || null,
+      yearLevel: data.yearLevel || null,
+      program: data.program || null
+    };
+  } catch (error) {
+    console.error('Error fetching student personal info from Supabase:', error);
+    return null;
+  }
+}
+
 async function sendRoleConfirmationEmail({ id: uid, username, email }, role, roleDocId) {
   try {
     const ttlMs = 2 * 24 * 60 * 60 * 1000; // 2 days
@@ -47,41 +72,41 @@ async function sendRoleConfirmationEmail({ id: uid, username, email }, role, rol
 
     const subj = `Confirm your ${role === 'mentor' ? 'Mentor' : 'Learner'} account`;
     const text = `
-Hi ${username},
+    Hi ${username},
 
-You just created a ${role} profile on MindMate. Please confirm:
+    You just created a ${role} profile on MindMate. Please confirm:
 
-Verify: ${verifyUrl}
-Do not verify: ${unverifyUrl}
+    Verify: ${verifyUrl}
+    Do not verify: ${unverifyUrl}
 
-If you didn't request this, you can ignore this email.
+    If you didn't request this, you can ignore this email.
 
-MindMate Team
-`.trim();
+    MindMate Team
+    `.trim();
 
     const brandPrimary = '#4F46E5';
     const html = `
-<!doctype html>
-<html>
-  <body style="font-family:Arial,Helvetica,sans-serif;background:#F8FAFC;padding:24px;">
-    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden">
-      <div style="height:6px;background:${brandPrimary}"></div>
-      <div style="padding:20px 24px">
-        <h2 style="margin:0 0 10px 0">Confirm your ${role === 'mentor' ? 'Mentor' : 'Learner'} account</h2>
-        <p>Hi ${username},</p>
-        <p>You created a ${role} profile on MindMate. Please confirm your account:</p>
-        <p>
-          <a href="${verifyUrl}" style="background:${brandPrimary};color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;display:inline-block;margin-right:10px">Verify account</a>
-          <a href="${unverifyUrl}" style="background:#E11D48;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;display:inline-block">Do not verify</a>
-        </p>
-        <p style="color:#475569;font-size:12px">If the buttons don't work, copy these links:</p>
-        <p style="word-break:break-all;font-size:12px"><strong>Verify:</strong> ${verifyUrl}</p>
-        <p style="word-break:break-all;font-size:12px"><strong>Do not verify:</strong> ${unverifyUrl}</p>
-      </div>
-    </div>
-  </body>
-</html>
-`.trim();
+    <!doctype html>
+    <html>
+      <body style="font-family:Arial,Helvetica,sans-serif;background:#F8FAFC;padding:24px;">
+        <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #E2E8F0;border-radius:12px;overflow:hidden">
+          <div style="height:6px;background:${brandPrimary}"></div>
+          <div style="padding:20px 24px">
+            <h2 style="margin:0 0 10px 0">Confirm your ${role === 'mentor' ? 'Mentor' : 'Learner'} account</h2>
+            <p>Hi ${username},</p>
+            <p>You created a ${role} profile on MindMate. Please confirm your account:</p>
+            <p>
+              <a href="${verifyUrl}" style="background:${brandPrimary};color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;display:inline-block;margin-right:10px">Verify account</a>
+              <a href="${unverifyUrl}" style="background:#E11D48;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;display:inline-block">Do not verify</a>
+            </p>
+            <p style="color:#475569;font-size:12px">If the buttons don't work, copy these links:</p>
+            <p style="word-break:break-all;font-size:12px"><strong>Verify:</strong> ${verifyUrl}</p>
+            <p style="word-break:break-all;font-size:12px"><strong>Do not verify:</strong> ${unverifyUrl}</p>
+          </div>
+        </div>
+      </body>
+    </html>
+    `.trim();
 
     await mailingController.sendEmailNotification(email, subj, text, html);
   } catch (e) {
@@ -124,13 +149,34 @@ exports.checkAuth = async (req, res) => {
   }
 };
 
-
 exports.learnerSignup = async (req, res) => {
   const decoded = getValuesFromToken(req);
   if (!decoded) {
     return res.status(403).json({ message: 'Invalid token', code: 403 });
   }
 
+  // Fetch personal information from Supabase
+  const personalInfo = await getUserPersonalInfoFromSupabase(decoded.email);
+  if (!personalInfo) {
+    return res.status(500).json({ message: 'Failed to retrieve user information from database', code: 500 });
+  }
+
+  // Validate that required personal information exists in Supabase
+  if (!personalInfo.address || !personalInfo.phoneNumber || !personalInfo.sex || !personalInfo.yearLevel || !personalInfo.program) {
+    return res.status(400).json({ 
+      message: 'Missing required personal information in database. Please ensure your profile is complete.', 
+      code: 400,
+      missingFields: {
+        address: !personalInfo.address,
+        phoneNumber: !personalInfo.phoneNumber,
+        sex: !personalInfo.sex,
+        yearLevel: !personalInfo.yearLevel,
+        program: !personalInfo.program
+      }
+    });
+  }
+
+  // Get image from file upload or request body
   let learnerImage = null;
   if (req.file) {
     try {
@@ -155,25 +201,26 @@ exports.learnerSignup = async (req, res) => {
     learnerImage = req.body.image === null ? "null" : req.body.image;
   }
 
+  // Get fields from request body (sent by frontend)
   const { 
-    program,
-    yearLevel,
-    phoneNumber,
     bio,
-    sex,
-    goals,
-    address,
     modality,
-    subjects,
+    specialization,
     availability,
     style,
     sessionDur
   } = req.body;
 
   // Parse arrays if sent as JSON strings
-  const parsedSubjects = typeof subjects === 'string' ? JSON.parse(subjects) : subjects;
+  const parsedSpecialization = typeof specialization === 'string' ? JSON.parse(specialization) : specialization;
   const parsedAvailability = typeof availability === 'string' ? JSON.parse(availability) : availability;
   const parsedStyle = typeof style === 'string' ? JSON.parse(style) : style;
+
+  // Get personal info from Supabase
+  const { program, yearLevel, phoneNumber, sex, address } = personalInfo;
+
+  // goals field - use bio as default
+  const goals = req.body.goals || bio;
 
   // Check if learner already exists
   const existingLearner = await Learner.findOne({ userId: decoded.id });
@@ -181,9 +228,9 @@ exports.learnerSignup = async (req, res) => {
     return res.status(400).json({ message: 'Learner already exists', code: 400 });
   }
 
-  // Validate required fields
-  if (!decoded.id || !decoded.username || !decoded.email || !program || !yearLevel || !phoneNumber || !bio || !sex || !goals || !address || !modality || !parsedSubjects || !parsedAvailability || !parsedStyle || !sessionDur) {
-    return res.status(400).json({ message: 'All fields are required', code: 400 });
+  // Validate required fields from request body
+  if (!bio || !modality || !parsedSpecialization || !parsedAvailability || !parsedStyle || !sessionDur) {
+    return res.status(400).json({ message: 'All fields are required Preference Input', code: 400 });
   }
 
   // Validate field formats
@@ -221,8 +268,8 @@ exports.learnerSignup = async (req, res) => {
   }
 
   // Validate arrays
-  if (!Array.isArray(parsedSubjects) || parsedSubjects.length === 0) {
-    return res.status(400).json({ message: 'Subjects must be a non-empty array', code: 400 });
+  if (!Array.isArray(parsedSpecialization) || parsedSpecialization.length === 0) {
+    return res.status(400).json({ message: 'Specialization must be a non-empty array', code: 400 });
   }
   if (!Array.isArray(parsedAvailability) || parsedAvailability.length === 0) {
     return res.status(400).json({ message: 'Availability must be a non-empty array', code: 400 });
@@ -259,7 +306,7 @@ exports.learnerSignup = async (req, res) => {
       goals,
       address,
       modality,
-      subjects: parsedSubjects,
+      specialization: parsedSpecialization,
       availability: parsedAvailability,
       style: parsedStyle,
       sessionDur,
@@ -295,15 +342,30 @@ exports.learnerSignup = async (req, res) => {
 };
 
 exports.mentorSignup = async (req, res) => {
-  let token = null;
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.MindMateToken) {
-    token = req.cookies.MindMateToken;
-  }
-  const decoded = token ? require('jsonwebtoken').verify(token, process.env.JWT_SECRET) : null;
+  const decoded = getValuesFromToken(req);
   if (!decoded) {
     return res.status(403).json({ message: 'Invalid token', code: 403 });
+  }
+
+  // Fetch personal information from Supabase
+  const personalInfo = await getUserPersonalInfoFromSupabase(decoded.email);
+  if (!personalInfo) {
+    return res.status(500).json({ message: 'Failed to retrieve user information from database', code: 500 });
+  }
+
+  // Validate that required personal information exists in Supabase
+  if (!personalInfo.address || !personalInfo.phoneNumber || !personalInfo.sex || !personalInfo.yearLevel || !personalInfo.program) {
+    return res.status(400).json({ 
+      message: 'Missing required personal information in database. Please ensure your profile is complete.', 
+      code: 400,
+      missingFields: {
+        address: !personalInfo.address,
+        phoneNumber: !personalInfo.phoneNumber,
+        sex: !personalInfo.sex,
+        yearLevel: !personalInfo.yearLevel,
+        program: !personalInfo.program
+      }
+    });
   }
 
   let mentorImage = null;
@@ -362,19 +424,21 @@ exports.mentorSignup = async (req, res) => {
     }
   }
 
-  // Parse fields from req.body (FormData sends all as strings)
+  // Get mentor-specific fields from request body
   const {
-    sex, program, yearLevel, phoneNumber, bio, exp, address, modality,
-    proficiency, subjects, availability, style, sessionDur
+    bio, exp, modality, proficiency, specialization, availability, style, sessionDur
   } = req.body;
 
   // Parse arrays if sent as JSON strings
-  const parsedSubjects = typeof subjects === 'string' ? JSON.parse(subjects) : subjects;
+  const parsedSpecialization = typeof specialization === 'string' ? JSON.parse(specialization) : specialization;
   const parsedAvailability = typeof availability === 'string' ? JSON.parse(availability) : availability;
   const parsedStyle = typeof style === 'string' ? JSON.parse(style) : style;
 
-  // Validate required fields (add more as needed)
-  if (!decoded.id || !decoded.username || !decoded.email || !sex || !program || !yearLevel || !phoneNumber || !bio || !exp || !address || !modality || !proficiency || !parsedSubjects || !parsedAvailability || !parsedStyle || !sessionDur) {
+  // Get personal info from Supabase
+  const { program, yearLevel, phoneNumber, sex, address } = personalInfo;
+
+  // Validate required fields from request body
+  if (!bio || !exp || !modality || !proficiency || !parsedSpecialization || !parsedAvailability || !parsedStyle || !sessionDur) {
     return res.status(400).json({ message: 'All fields are required', code: 400 });
   }
 
@@ -413,8 +477,8 @@ exports.mentorSignup = async (req, res) => {
   }
 
   // Validate arrays
-  if (!Array.isArray(parsedSubjects) || parsedSubjects.length === 0) {
-    return res.status(400).json({ message: 'Subjects must be a non-empty array', code: 400 });
+  if (!Array.isArray(parsedSpecialization) || parsedSpecialization.length === 0) {
+    return res.status(400).json({ message: 'Specialization must be a non-empty array', code: 400 });
   }
   if (!Array.isArray(parsedAvailability) || parsedAvailability.length === 0) {
     return res.status(400).json({ message: 'Availability must be a non-empty array', code: 400 });
@@ -452,7 +516,7 @@ exports.mentorSignup = async (req, res) => {
       address,
       modality,
       proficiency,
-      subjects: parsedSubjects,
+      specialization: parsedSpecialization,
       availability: parsedAvailability,
       style: parsedStyle,
       sessionDur,
@@ -673,80 +737,80 @@ exports.forgotPassword = async (req, res) => {
     const subject = `${brand.name} • Password Reset Request`;
 
     const text = `
-Hi ${user.username},
+  Hi ${user.username},
 
-We received a request to reset your password. Use the link below to set a new password. This link expires in 30 minutes.
+  We received a request to reset your password. Use the link below to set a new password. This link expires in 30 minutes.
 
-${resetLink}
+  ${resetLink}
 
-If you did not request this, you can ignore this email.
+  If you did not request this, you can ignore this email.
 
-${brand.name} Team
-`.trim();
+  ${brand.name} Team
+  `.trim();
 
-    const html = `
-<!doctype html>
-<html lang="en">
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${brand.name} • Reset your password</title>
-</head>
-<body style="margin:0;padding:0;background:${brand.bg};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${brand.bg};padding:24px 12px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:${brand.cardBg};border:1px solid ${brand.border};border-radius:12px;box-shadow:0 10px 30px rgba(2,6,23,.06);overflow:hidden;">
-          <tr>
-            <td style="height:6px;background:${brand.primary};"></td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:20px 24px 0 24px;">
-              <img src="${logoUrl}" width="64" height="64" alt="${brand.name} logo" style="display:block;margin:0 auto 8px;border-radius:12px;">
-              <h1 style="margin:8px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:20px;line-height:28px;color:${brand.text};font-weight:700;">Reset your password</h1>
-              <p style="margin:6px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:${brand.muted};">
-                We received a request to reset your ${brand.name} password.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td align="center" style="padding:20px 24px 4px 24px;">
-              <a href="${resetLink}"
-                 style="background:${brand.primary};color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;display:inline-block;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-weight:600;font-size:14px;">
-                 Reset Password
-              </a>
-              <p style="margin:10px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
-                This link expires in 30 minutes.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:8px 24px 20px 24px;">
-              <p style="margin:0 0 6px 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
-                If the button doesn’t work, copy and paste this link into your browser:
-              </p>
-              <a href="${resetLink}" style="font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.primaryDark};word-break:break-all;text-decoration:none;">
-                ${resetLink}
-              </a>
-            </td>
-          </tr>
-          <tr>
-            <td style="border-top:1px solid ${brand.border};padding:16px 24px 20px 24px;">
-              <p style="margin:0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
-                Didn’t request this? You can safely ignore this email.
-              </p>
-              <p style="margin:8px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
-                © ${new Date().getFullYear()} ${brand.name}. All rights reserved.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-`.trim();
+      const html = `
+  <!doctype html>
+  <html lang="en">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${brand.name} • Reset your password</title>
+  </head>
+  <body style="margin:0;padding:0;background:${brand.bg};-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${brand.bg};padding:24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:${brand.cardBg};border:1px solid ${brand.border};border-radius:12px;box-shadow:0 10px 30px rgba(2,6,23,.06);overflow:hidden;">
+            <tr>
+              <td style="height:6px;background:${brand.primary};"></td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:20px 24px 0 24px;">
+                <img src="${logoUrl}" width="64" height="64" alt="${brand.name} logo" style="display:block;margin:0 auto 8px;border-radius:12px;">
+                <h1 style="margin:8px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:20px;line-height:28px;color:${brand.text};font-weight:700;">Reset your password</h1>
+                <p style="margin:6px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:${brand.muted};">
+                  We received a request to reset your ${brand.name} password.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:20px 24px 4px 24px;">
+                <a href="${resetLink}"
+                  style="background:${brand.primary};color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:10px;display:inline-block;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-weight:600;font-size:14px;">
+                  Reset Password
+                </a>
+                <p style="margin:10px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
+                  This link expires in 30 minutes.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 24px 20px 24px;">
+                <p style="margin:0 0 6px 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
+                  If the button doesn’t work, copy and paste this link into your browser:
+                </p>
+                <a href="${resetLink}" style="font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.primaryDark};word-break:break-all;text-decoration:none;">
+                  ${resetLink}
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td style="border-top:1px solid ${brand.border};padding:16px 24px 20px 24px;">
+                <p style="margin:0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
+                  Didn’t request this? You can safely ignore this email.
+                </p>
+                <p style="margin:8px 0 0 0;font-family:Inter,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:${brand.muted};">
+                  © ${new Date().getFullYear()} ${brand.name}. All rights reserved.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+  </html>
+  `.trim();
 
     await mailingController.sendEmailNotification(user.email, subject, text, html);
 
@@ -827,6 +891,28 @@ exports.learnerAltSignup = async (req, res) => {
     return res.status(403).json({ message: 'Invalid token', code: 403 });
   }
 
+  // Fetch personal information from Supabase
+  const personalInfo = await getUserPersonalInfoFromSupabase(decoded.email);
+  if (!personalInfo) {
+    return res.status(500).json({ message: 'Failed to retrieve user information from database', code: 500 });
+  }
+
+  // Validate that required personal information exists in Supabase
+  if (!personalInfo.address || !personalInfo.phoneNumber || !personalInfo.sex || !personalInfo.yearLevel || !personalInfo.program) {
+    return res.status(400).json({ 
+      message: 'Missing required personal information in database. Please ensure your profile is complete.', 
+      code: 400,
+      missingFields: {
+        address: !personalInfo.address,
+        phoneNumber: !personalInfo.phoneNumber,
+        sex: !personalInfo.sex,
+        yearLevel: !personalInfo.yearLevel,
+        program: !personalInfo.program
+      }
+    });
+  }
+
+  // Get image from file upload or request body
   let learnerImage = null;
   if (req.file) {
     try {
@@ -846,41 +932,46 @@ exports.learnerAltSignup = async (req, res) => {
     learnerImage = req.body.image === null ? "null" : req.body.image;
   }
 
+  // Get fields from request body (sent by frontend)
   const { 
-    program,
-    yearLevel,
-    phoneNumber,
     bio,
-    sex,
-    goals,
-    address,
     modality,
-    subjects,
+    specialization,
     availability,
     style,
     sessionDur
   } = req.body;
 
-  const parsedSubjects = typeof subjects === 'string' ? JSON.parse(subjects) : subjects;
+  // Parse arrays if sent as JSON strings
+  const parsedSpecialization = typeof specialization === 'string' ? JSON.parse(specialization) : specialization;
   const parsedAvailability = typeof availability === 'string' ? JSON.parse(availability) : availability;
   const parsedStyle = typeof style === 'string' ? JSON.parse(style) : style;
+
+  // Get personal info from Supabase
+  const { program, yearLevel, phoneNumber, sex, address } = personalInfo;
+
+  // goals field - use bio as default
+  const goals = req.body.goals || bio;
 
   const existingLearner = await Learner.findOne({ userId: decoded.id });
   if (existingLearner) {
     return res.status(400).json({ message: 'Learner already exists', code: 400 });
   }
 
-  if (!decoded.id || !decoded.username || !decoded.email || !program || !yearLevel || !phoneNumber || !bio || !sex || !goals || !address || !modality || !parsedSubjects || !parsedAvailability || !parsedStyle || !sessionDur) {
+  // Validate required fields from request body
+  if (!bio || !modality || !parsedSpecialization || !parsedAvailability || !parsedStyle || !sessionDur) {
     return res.status(400).json({ message: 'All fields are required', code: 400 });
   }
 
-  if (phoneNumber.length !== 11) {
+  // Validate field formats from Supabase data
+  if (phoneNumber && phoneNumber.length !== 11) {
     return res.status(400).json({ message: 'Phone number must be 11 digits', code: 400 });
   }
-  if (bio.length < 10 || bio.length > 550) {
+  if (bio && (bio.length < 10 || bio.length > 550)) {
     return res.status(400).json({ message: 'Bio must be between 10 and 550 characters', code: 400 });
   }
 
+  // Define valid enum values (from your Learner model)
   const validPrograms = ['BSIT', 'BSCS', 'BSEMC'];
   const validYearLevels = ['1st year', '2nd year', '3rd year', '4th year', 'graduate'];
   const validModalities = ['online', 'in-person', 'hybrid'];
@@ -889,41 +980,45 @@ exports.learnerAltSignup = async (req, res) => {
   const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const validStyles = ['lecture-based', 'interactive-discussion', 'q-and-a-discussion', 'demonstrations', 'project-based', 'step-by-step-discussion'];
 
-  if (!validPrograms.includes(program)) {
+  // Validate enum values
+  if (program && !validPrograms.includes(program)) {
     return res.status(400).json({ message: 'Invalid program', code: 400, validOptions: validPrograms });
   }
-  if (!validYearLevels.includes(yearLevel)) {
+  if (yearLevel && !validYearLevels.includes(yearLevel)) {
     return res.status(400).json({ message: 'Invalid year level', code: 400, validOptions: validYearLevels });
   }
-  if (!validModalities.includes(modality)) {
+  if (modality && !validModalities.includes(modality)) {
     return res.status(400).json({ message: 'Invalid modality', code: 400, validOptions: validModalities });
   }
-  if (!validSessionDurations.includes(sessionDur)) {
+  if (sessionDur && !validSessionDurations.includes(sessionDur)) {
     return res.status(400).json({ message: 'Invalid session duration', code: 400, validOptions: validSessionDurations });
   }
-  if (!validSexValues.includes(sex)) {
+  if (sex && !validSexValues.includes(sex)) {
     return res.status(400).json({ message: 'Invalid sex value', code: 400, validOptions: validSexValues });
   }
 
-  if (!Array.isArray(parsedSubjects) || parsedSubjects.length === 0) {
-    return res.status(400).json({ message: 'Subjects must be a non-empty array', code: 400 });
+  // Validate arrays
+  if (parsedSpecialization.length === 0) {
+    return res.status(400).json({ message: 'Specialization must be a non-empty array', code: 400 });
   }
-  if (!Array.isArray(parsedAvailability) || parsedAvailability.length === 0) {
+  if (parsedAvailability.length === 0) {
     return res.status(400).json({ message: 'Availability must be a non-empty array', code: 400 });
   }
-  if (!Array.isArray(parsedStyle) || parsedStyle.length === 0) {
+  if (parsedStyle.length === 0) {
     return res.status(400).json({ message: 'Style must be a non-empty array', code: 400 });
   }
 
+  // Validate availability days
   for (const day of parsedAvailability) {
     if (!validDays.includes(day)) {
       return res.status(400).json({ message: `Invalid availability day: ${day}`, code: 400, validOptions: validDays });
     }
   }
 
-  for (const style of parsedStyle) {
-    if (!validStyles.includes(style)) {
-      return res.status(400).json({ message: `Invalid learning style: ${style}`, code: 400, validOptions: validStyles });
+  // Validate learning styles
+  for (const styleItem of parsedStyle) {
+    if (!validStyles.includes(styleItem)) {
+      return res.status(400).json({ message: `Invalid learning style: ${styleItem}`, code: 400, validOptions: validStyles });
     }
   }
 
@@ -940,7 +1035,7 @@ exports.learnerAltSignup = async (req, res) => {
       goals,
       address,
       modality,
-      subjects: parsedSubjects,
+      specialization: parsedSpecialization,
       availability: parsedAvailability,
       style: parsedStyle,
       sessionDur,
@@ -974,15 +1069,30 @@ exports.learnerAltSignup = async (req, res) => {
 };
 
 exports.mentorAltSignup = async (req, res) => {
-  let token = null;
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    token = req.headers.authorization.split(' ')[1];
-  } else if (req.cookies && req.cookies.MindMateToken) {
-    token = req.cookies.MindMateToken;
-  }
-  const decoded = token ? require('jsonwebtoken').verify(token, process.env.JWT_SECRET) : null;
+  const decoded = getValuesFromToken(req);
   if (!decoded) {
     return res.status(403).json({ message: 'Invalid token', code: 403 });
+  }
+
+  // Fetch personal information from Supabase
+  const personalInfo = await getUserPersonalInfoFromSupabase(decoded.email);
+  if (!personalInfo) {
+    return res.status(500).json({ message: 'Failed to retrieve user information from database', code: 500 });
+  }
+
+  // Validate that required personal information exists in Supabase
+  if (!personalInfo.address || !personalInfo.phoneNumber || !personalInfo.sex || !personalInfo.yearLevel || !personalInfo.program) {
+    return res.status(400).json({ 
+      message: 'Missing required personal information in database. Please ensure your profile is complete.', 
+      code: 400,
+      missingFields: {
+        address: !personalInfo.address,
+        phoneNumber: !personalInfo.phoneNumber,
+        sex: !personalInfo.sex,
+        yearLevel: !personalInfo.yearLevel,
+        program: !personalInfo.program
+      }
+    });
   }
 
   let mentorImage = null;
@@ -1027,16 +1137,20 @@ exports.mentorAltSignup = async (req, res) => {
     }
   }
 
+  // Get mentor-specific fields from request body
   const {
-    sex, program, yearLevel, phoneNumber, bio, exp, address, modality,
-    proficiency, subjects, availability, style, sessionDur
+    bio, exp, modality, proficiency, specialization, availability, style, sessionDur
   } = req.body;
 
-  const parsedSubjects = typeof subjects === 'string' ? JSON.parse(subjects) : subjects;
+  const parsedSpecialization = typeof specialization === 'string' ? JSON.parse(specialization) : specialization;
   const parsedAvailability = typeof availability === 'string' ? JSON.parse(availability) : availability;
   const parsedStyle = typeof style === 'string' ? JSON.parse(style) : style;
 
-  if (!decoded.id || !decoded.username || !decoded.email || !sex || !program || !yearLevel || !phoneNumber || !bio || !exp || !address || !modality || !proficiency || !parsedSubjects || !parsedAvailability || !parsedStyle || !sessionDur) {
+  // Get personal info from Supabase
+  const { program, yearLevel, phoneNumber, sex, address } = personalInfo;
+
+  // Validate required fields from request body
+  if (!bio || !exp || !modality || !proficiency || !parsedSpecialization || !parsedAvailability || !parsedStyle || !sessionDur) {
     return res.status(400).json({ message: 'All fields are required', code: 400 });
   }
 
@@ -1073,8 +1187,8 @@ exports.mentorAltSignup = async (req, res) => {
     return res.status(400).json({ message: 'Invalid sex value', code: 400, validOptions: validSexValues });
   }
 
-  if (!Array.isArray(parsedSubjects) || parsedSubjects.length === 0) {
-    return res.status(400).json({ message: 'Subjects must be a non-empty array', code: 400 });
+  if (!Array.isArray(parsedSpecialization) || parsedSpecialization.length === 0) {
+    return res.status(400).json({ message: 'Specialization must be a non-empty array', code: 400 });
   }
   if (!Array.isArray(parsedAvailability) || parsedAvailability.length === 0) {
     return res.status(400).json({ message: 'Availability must be a non-empty array', code: 400 });
@@ -1109,7 +1223,7 @@ exports.mentorAltSignup = async (req, res) => {
       address,
       modality,
       proficiency,
-      subjects: parsedSubjects,
+      specialization: parsedSpecialization,
       availability: parsedAvailability,
       style: parsedStyle,
       sessionDur,

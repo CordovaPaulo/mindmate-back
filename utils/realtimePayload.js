@@ -28,7 +28,7 @@ function schedulePayload(schedule, mentor, learner) {
 
 // keep feedback payload same shape as DB docs returned by mentor.getFeedbacks
 function feedbackPayload(feedback) {
-  return {
+  const payload = {
     _id: feedback._id,
     learner: String(feedback.learner),
     mentor: String(feedback.mentor),
@@ -38,6 +38,26 @@ function feedbackPayload(feedback) {
     createdAt: feedback.createdAt,
     updatedAt: feedback.updatedAt
   };
+  
+  // Include evaluation data if present
+  if (feedback.evaluation) {
+    payload.evaluation = {
+      knowledge: feedback.evaluation.knowledge,
+      pacing: feedback.evaluation.pacing,
+      communication: feedback.evaluation.communication,
+      engagement: feedback.evaluation.engagement,
+      feedbackQuality: feedback.evaluation.feedbackQuality,
+      professionalism: feedback.evaluation.professionalism,
+      resources: feedback.evaluation.resources,
+      accessibility: feedback.evaluation.accessibility,
+      learningOutcomes: feedback.evaluation.learningOutcomes,
+      whatHelped: feedback.evaluation.whatHelped,
+      suggestions: feedback.evaluation.suggestions,
+      categoryAverage: feedback.evaluation.categoryAverage
+    };
+  }
+  
+  return payload;
 }
 
 module.exports = { schedulePayload, feedbackPayload };

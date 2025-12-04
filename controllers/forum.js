@@ -38,7 +38,7 @@ exports.createPost = async (req, res) => {
 
 exports.getPosts = async (req, res) => {
     try {
-        const posts = await Forum.find().sort({ createdAt: -1 });
+        const posts = await Forum.find({archived: false}).sort({ createdAt: -1 });
         const metrics = await ForumMetrics.find({ target: { $in: posts.map(p => p._id) }, onModel: 'Forum' });
         res.status(200).json(posts.map(post => ({
             id: post._id,
@@ -61,7 +61,7 @@ exports.getPosts = async (req, res) => {
 exports.getPostById = async (req, res) => {
     const { id } = req.params;
     try {
-        const post = await Forum.findById(id);
+        const post = await Forum.findOne({ _id: id, archived: false });
         const metric = await ForumMetrics.findOne({ target: id, onModel: 'Forum' });
         if (!post) {
             return res.status(404).json({ error: "Post not found" });
@@ -263,12 +263,12 @@ exports.downvoteComment = async (req, res) => {
 exports.getCommentsByPostId = async (req, res) => {
     const { id } = req.params;
     try {
-        const post = await Forum.findById(id);
+        const post = await Forum.findOne({ _id: id, archived: false });
         if (!post) {
             return res.status(404).json({ error: "Post not found" });
         }
 
-        const comments = await ForumComment.find({ target: id, onModel: 'Forum' });
+        const comments = await ForumComment.find({ target: id, onModel: 'Forum', archived: false });
         // fetch metrics for all comments (use $in on comment ids)
         const commentMetrics = await ForumMetrics.find({
             target: { $in: comments.map(c => c._id) },
@@ -334,7 +334,7 @@ exports.deletePost = async (req, res) => {
         if (!post) {
             return res.status(404).json({ error: "Post not found" });
         }
-        await post.remove();
+        await post.deleteOne();
         res.status(200).json({ message: "Post deleted successfully" });
     } catch (error) {
         console.error("Error deleting post:", error);
@@ -350,7 +350,7 @@ exports.deleteComment = async (req, res) => {
         if (!comment) {
             return res.status(404).json({ error: "Comment not found" });
         }
-        await comment.remove();
+        await comment.deleteOne();
         res.status(200).json({ message: "Comment deleted successfully" });
     } catch (error) {
         console.error("Error deleting comment:", error);
@@ -359,18 +359,147 @@ exports.deleteComment = async (req, res) => {
 
 }
 
-// exports.editPost = async (req, res) => {
-//     try {} catch (error) {
-//         console.error("Error editing post:", error);
-//         res.status(500).json({ error: "Internal server error" });
-//     }
+exports.adminArchivePost = async (req, res) => {
+    const decoded = getValuesFromToken(req);
+    if (!decoded) {
+        return res.status(403).json({ error: "Access denied" });
+    }
 
-// }
+    const { id } = req.params;
+    
+    try {
+        const post = await Forum.findOne({ _id: id, archived: false });
+        if (!post) {
+            return res.status(404).json({ error: "Post not found" });
+        }
+        post.archived = true;
+        await post.save();
+        res.status(200).json({ message: "Post archived successfully" });
+    } catch (error) {
+        console.error("Error archiving post:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
 
-// exports.editComment = async (req, res) => {
-//     try {} catch (error) {
-//         console.error("Error editing comment:", error);
-//         res.status(500).json({ error: "Internal server error" });
-//     }
+exports.adminArchiveComment = async (req, res) => {
+    const decoded = getValuesFromToken(req);
+    if (!decoded) {
+        return res.status(403).json({ error: "Access denied" });
+    }
 
-// }
+    const { id } = req.params;
+
+    try {
+        const comment = await ForumComment.findOne({ _id: id, archived: false });
+        if (!comment) {
+            return res.status(404).json({ error: "Comment not found" });
+        }
+        comment.archived = true;
+        await comment.save();
+        res.status(200).json({ message: "Comment archived successfully" });
+    } catch (error) {
+        console.error("Error archiving comment:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+exports.adminRestorePost = async (req, res) => {
+    const decoded = getValuesFromToken(req);
+    if (!decoded) {
+        return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { id } = req.params;
+    
+    try {
+        const post = await Forum.findOne({ _id: id, archived: true });
+        if (!post) {
+            return res.status(404).json({ error: "Archived post not found" });
+        }
+        post.archived = false;
+        await post.save();
+        res.status(200).json({ message: "Post restored successfully" });
+    } catch (error) {
+        console.error("Error restoring post:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+exports.adminRestoreComment = async (req, res) => {
+    const decoded = getValuesFromToken(req);
+    if (!decoded) {
+        return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { id } = req.params;
+
+    try {
+        const comment = await ForumComment.findOne({ _id: id, archived: true });
+        if (!comment) {
+            return res.status(404).json({ error: "Archived comment not found" });
+        }
+        comment.archived = false;
+        await comment.save();
+        res.status(200).json({ message: "Comment restored successfully" });
+    } catch (error) {
+        console.error("Error restoring comment:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+exports.adminGetAllPosts = async (req, res) => {
+    try {
+        const posts = await Forum.find().sort({ createdAt: -1 });
+        const metrics = await ForumMetrics.find({ target: { $in: posts.map(p => p._id) }, onModel: 'Forum' });
+        res.status(200).json(posts.map(post => ({
+            id: post._id,
+            title: post.title,
+            content: post.content,
+            author: post.author,
+            archived: post.archived,
+            authorName: post.authorName,
+            createdAt: post.createdAt,
+            upvotes: metrics.find(m => m.target.toString() === post._id.toString())?.upvote || 0,
+            downvotes: metrics.find(m => m.target.toString() === post._id.toString())?.downvote || 0,
+            commentsCount: metrics.find(m => m.target.toString() === post._id.toString())?.commentsCount || 0,
+        })));  
+    } catch (error) {
+        console.error("Error fetching posts:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+exports.adminGetAllComments = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const post = await Forum.findOne({ _id: id });
+        if (!post) {
+            return res.status(404).json({ error: "Post not found" });
+        }
+
+        const comments = await ForumComment.find({ target: id, onModel: 'Forum' });
+        // fetch metrics for all comments (use $in on comment ids)
+        const commentMetrics = await ForumMetrics.find({
+            target: { $in: comments.map(c => c._id) },
+            onModel: 'ForumComment'
+        });
+
+        res.status(200).json(comments.map(comment => {
+            const m = commentMetrics.find(cm => cm.target.toString() === comment._id.toString());
+            return {
+                id: comment._id,
+                content: comment.content,
+                author: comment.author,
+                archived: comment.archived,
+                authorName: comment.authorName,
+                createdAt: comment.createdAt,
+                upvotes: m?.upvote || 0,
+                downvotes: m?.downvote || 0,
+                commentsCount: m?.commentsCount || 0,
+            };
+        }));
+    } catch (error) {
+        console.error("Error fetching comments by post ID:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}

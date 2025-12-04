@@ -1,0 +1,399 @@
+{
+  "description": "Test JSON bodies for Challenge System API endpoints",
+  "note": "Replace {{presetScheduleId}}, {{challengeId}}, {{submissionId}} with actual IDs from your database",
+  
+  "MENTOR_ENDPOINTS": {
+    
+    "1_CREATE_PRESET_SCHEDULE": {
+      "method": "POST",
+      "endpoint": "/api/mentor/schedules/preset",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "days": ["monday", "wednesday", "friday"],
+        "time": "14:00",
+        "subject": "React Fundamentals",
+        "specialization": "Web and Mobile Application Development",
+        "course": "BSIT"
+      }
+    },
+
+    "2_CREATE_CHALLENGE_BEGINNER": {
+      "method": "POST",
+      "endpoint": "/api/mentor/challenges",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "title": "Build a Simple Todo List App",
+        "description": "Create a basic todo list application using HTML, CSS, and JavaScript. The app should allow users to add, edit, and delete tasks.",
+        "requirements": [
+          "Use semantic HTML5 elements",
+          "Style with CSS (no frameworks)",
+          "Implement add, edit, delete functionality",
+          "Use localStorage to persist data",
+          "Include form validation"
+        ],
+        "presetScheduleId": "{{presetScheduleId}}",
+        "difficulty": "beginner",
+        "estimatedHours": 8,
+        "deadline": "2025-12-31T23:59:59.000Z",
+        "maxParticipants": 20,
+        "xpReward": 50,
+        "skillsTargeted": [
+          "Foundation (HTML, CSS, JavaScript (ES6+))",
+          "UX/UI Basics"
+        ]
+      }
+    },
+
+    "3_CREATE_CHALLENGE_INTERMEDIATE": {
+      "method": "POST",
+      "endpoint": "/api/mentor/challenges",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "title": "React Weather Dashboard",
+        "description": "Build a weather dashboard using React that fetches data from a weather API and displays current weather and 5-day forecast.",
+        "requirements": [
+          "Use React functional components and hooks",
+          "Integrate with OpenWeatherMap API or similar",
+          "Display current weather and 5-day forecast",
+          "Implement search by city name",
+          "Add loading states and error handling",
+          "Make it responsive",
+          "Deploy to Vercel or Netlify"
+        ],
+        "presetScheduleId": "{{presetScheduleId}}",
+        "difficulty": "intermediate",
+        "estimatedHours": 15,
+        "deadline": "2026-01-15T23:59:59.000Z",
+        "maxParticipants": 15,
+        "xpReward": 100,
+        "skillsTargeted": [
+          "Frontend Frameworks (Vue, React, Angular)",
+          "Integration (REST APIs, OAuth2, JWT)",
+          "Deployment (CI/CD, Docker, Vercel, Render, Firebase)"
+        ]
+      }
+    },
+
+    "4_CREATE_CHALLENGE_ADVANCED": {
+      "method": "POST",
+      "endpoint": "/api/mentor/challenges",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "title": "Full-Stack E-Commerce Platform",
+        "description": "Develop a complete e-commerce platform with user authentication, product catalog, shopping cart, and payment integration.",
+        "requirements": [
+          "Backend API with Node.js/Laravel",
+          "Frontend with React/Vue",
+          "User authentication and authorization",
+          "Product CRUD operations",
+          "Shopping cart functionality",
+          "Payment gateway integration (Stripe/PayPal sandbox)",
+          "Order management system",
+          "Admin dashboard",
+          "Database design with proper relationships",
+          "Deployed with CI/CD pipeline"
+        ],
+        "presetScheduleId": "{{presetScheduleId}}",
+        "difficulty": "advanced",
+        "estimatedHours": 40,
+        "deadline": "2026-02-28T23:59:59.000Z",
+        "maxParticipants": 10,
+        "xpReward": 250,
+        "skillsTargeted": [
+          "Backend Development (Node.js, Laravel, Django)",
+          "Frontend Frameworks (Vue, React, Angular)",
+          "Databases (MySQL, PostgreSQL, SQLite, MongoDB",
+          "Integration (REST APIs, OAuth2, JWT)",
+          "Deployment (CI/CD, Docker, Vercel, Render, Firebase)"
+        ]
+      }
+    },
+
+    "5_GET_ALL_OWNED_CHALLENGES": {
+      "method": "GET",
+      "endpoint": "/api/mentor/challenges",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}"
+      }
+    },
+
+    "6_GET_ONE_CHALLENGE": {
+      "method": "GET",
+      "endpoint": "/api/mentor/challenges/{{challengeId}}",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}"
+      }
+    },
+
+    "7_UPDATE_CHALLENGE": {
+      "method": "PATCH",
+      "endpoint": "/api/mentor/challenges/{{challengeId}}",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "title": "Build an Advanced Todo List App with React",
+        "description": "Updated description with more details",
+        "xpReward": 75,
+        "deadline": "2026-01-31T23:59:59.000Z",
+        "isActive": true
+      }
+    },
+
+    "8_APPROVE_SUBMISSION": {
+      "method": "POST",
+      "endpoint": "/api/mentor/challenges/{{challengeId}}/submissions/{{submissionId}}/approve",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "feedback": "Excellent work! Your implementation meets all requirements. The code is clean and well-structured. Great use of React hooks and state management."
+      }
+    },
+
+    "9_REJECT_SUBMISSION": {
+      "method": "POST",
+      "endpoint": "/api/mentor/challenges/{{challengeId}}/submissions/{{submissionId}}/reject",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "feedback": "Good effort, but needs improvement. Please address: 1) Add proper error handling, 2) Implement responsive design, 3) Fix the delete functionality bug. Resubmit after making these changes."
+      }
+    },
+
+    "10_DELETE_CHALLENGE": {
+      "method": "DELETE",
+      "endpoint": "/api/mentor/challenges/{{challengeId}}",
+      "headers": {
+        "Authorization": "Bearer {{mentorToken}}"
+      }
+    }
+  },
+
+  "LEARNER_ENDPOINTS": {
+    
+    "1_JOIN_PRESET_SCHEDULE": {
+      "method": "POST",
+      "endpoint": "/api/learner/preset/join",
+      "headers": {
+        "Authorization": "Bearer {{learnerToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "presetId": "{{presetScheduleId}}"
+      },
+      "note": "Learner's specialization and course must match the preset schedule"
+    },
+
+    "2_GET_AVAILABLE_CHALLENGES": {
+      "method": "GET",
+      "endpoint": "/api/learner/challenges",
+      "headers": {
+        "Authorization": "Bearer {{learnerToken}}"
+      },
+      "note": "Returns challenges grouped by enrolled preset schedules"
+    },
+
+    "3_GET_CHALLENGE_DETAILS": {
+      "method": "GET",
+      "endpoint": "/api/learner/challenges/{{challengeId}}",
+      "headers": {
+        "Authorization": "Bearer {{learnerToken}}"
+      }
+    },
+
+    "4_SUBMIT_CHALLENGE_WITH_URL": {
+      "method": "POST",
+      "endpoint": "/api/learner/challenges/{{challengeId}}/submit",
+      "headers": {
+        "Authorization": "Bearer {{learnerToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "submissionUrl": "https://github.com/username/todo-app",
+        "submissionText": "Deployed at: https://my-todo-app.vercel.app\n\nI implemented all the requirements including localStorage persistence and form validation. Added extra features like task prioritization and dark mode."
+      }
+    },
+
+    "5_SUBMIT_CHALLENGE_TEXT_ONLY": {
+      "method": "POST",
+      "endpoint": "/api/learner/challenges/{{challengeId}}/submit",
+      "headers": {
+        "Authorization": "Bearer {{learnerToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "submissionText": "Project completed and deployed.\n\nGitHub: https://github.com/student/weather-app\nLive Demo: https://weather-dashboard.netlify.app\n\nFeatures implemented:\n- Current weather display\n- 5-day forecast\n- City search with autocomplete\n- Responsive design\n- Error handling for invalid cities\n- Loading states"
+      }
+    },
+
+    "6_QUIT_PRESET_SCHEDULE": {
+      "method": "POST",
+      "endpoint": "/api/learner/preset/leave",
+      "headers": {
+        "Authorization": "Bearer {{learnerToken}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "presetId": "{{presetScheduleId}}"
+      }
+    }
+  },
+
+  "TEST_SCENARIOS": {
+    
+    "SCENARIO_1_COMPLETE_FLOW": {
+      "description": "Complete flow from preset schedule creation to challenge submission and approval",
+      "steps": [
+        "1. Mentor creates preset schedule with specialization and course",
+        "2. Learner (with matching specialization/course) joins preset schedule",
+        "3. Mentor creates challenge for that preset schedule",
+        "4. Learner views available challenges (should see the new challenge)",
+        "5. Learner submits the challenge",
+        "6. Mentor views submissions for the challenge",
+        "7. Mentor approves the submission",
+        "8. System awards XP to learner (future integration)"
+      ]
+    },
+
+    "SCENARIO_2_VALIDATION_TESTS": {
+      "description": "Test validation and error cases",
+      "tests": [
+        {
+          "test": "Learner with different specialization tries to join preset schedule",
+          "expected": "403 - Specialization mismatch error"
+        },
+        {
+          "test": "Learner with different course tries to join preset schedule",
+          "expected": "403 - Course mismatch error"
+        },
+        {
+          "test": "Learner tries to submit challenge without being enrolled",
+          "expected": "403 - Not enrolled error"
+        },
+        {
+          "test": "Learner tries to submit same challenge twice",
+          "expected": "400 - Already submitted error"
+        },
+        {
+          "test": "Learner submits after deadline",
+          "expected": "400 - Deadline passed error"
+        },
+        {
+          "test": "Mentor tries to create challenge for another mentor's preset schedule",
+          "expected": "403 - Ownership error"
+        }
+      ]
+    },
+
+    "SCENARIO_3_EDGE_CASES": {
+      "description": "Test edge cases and limits",
+      "tests": [
+        {
+          "test": "Create challenge with maxParticipants limit",
+          "setup": "Set maxParticipants to 2",
+          "action": "Have 3 learners try to submit",
+          "expected": "Third learner gets 400 - Max participants reached"
+        },
+        {
+          "test": "Update challenge after submissions",
+          "action": "Update deadline after learners submitted",
+          "expected": "Challenge updates successfully"
+        },
+        {
+          "test": "Delete challenge with pending submissions",
+          "action": "Delete challenge that has submissions",
+          "expected": "Challenge and all submissions deleted"
+        }
+      ]
+    }
+  },
+
+  "SAMPLE_DATA_SETUP": {
+    "description": "Sample data for testing",
+    
+    "MENTOR_PROFILE": {
+      "program": "BSIT",
+      "specialization": ["Web and Mobile Application Development"],
+      "accountStatus": "accepted"
+    },
+
+    "LEARNER_PROFILE": {
+      "program": "BSIT",
+      "specialization": ["Web and Mobile Application Development"],
+      "note": "Must match preset schedule's course and specialization to join"
+    },
+
+    "PRESET_SCHEDULES": [
+      {
+        "days": ["monday", "wednesday"],
+        "time": "10:00",
+        "subject": "HTML & CSS Basics",
+        "specialization": "Web and Mobile Application Development",
+        "course": "BSIT"
+      },
+      {
+        "days": ["tuesday", "thursday"],
+        "time": "14:00",
+        "subject": "React Advanced",
+        "specialization": "Web and Mobile Application Development",
+        "course": "BSIT"
+      },
+      {
+        "days": ["friday"],
+        "time": "16:00",
+        "subject": "Mobile Development with Flutter",
+        "specialization": "Web and Mobile Application Development",
+        "course": "BSIT"
+      }
+    ],
+
+    "CHALLENGE_TEMPLATES": [
+      {
+        "difficulty": "beginner",
+        "title": "Portfolio Website",
+        "estimatedHours": 5,
+        "xpReward": 30
+      },
+      {
+        "difficulty": "intermediate",
+        "title": "REST API with Authentication",
+        "estimatedHours": 12,
+        "xpReward": 80
+      },
+      {
+        "difficulty": "advanced",
+        "title": "Real-time Chat Application",
+        "estimatedHours": 25,
+        "xpReward": 150
+      }
+    ]
+  },
+
+  "POSTMAN_ENVIRONMENT_VARIABLES": {
+    "description": "Create these variables in Postman for easy testing",
+    "variables": {
+      "mentorToken": "Your mentor JWT token",
+      "learnerToken": "Your learner JWT token",
+      "presetScheduleId": "ObjectId of created preset schedule",
+      "challengeId": "ObjectId of created challenge",
+      "submissionId": "ObjectId of challenge submission"
+    }
+  }
+}

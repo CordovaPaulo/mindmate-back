@@ -22,4 +22,15 @@ router.get('/comments/replies/:id', authenticateToken(), forumController.getRepl
 router.delete('/posts/:id', authenticateToken(), forumController.deletePost);
 router.delete('/comments/:id', authenticateToken(), forumController.deleteComment);
 
+// admin functions
+router.patch('/admin/comment/archive/:id', authenticateToken('admin'), forumController.adminArchiveComment);
+router.patch('/admin/post/archive/:id', authenticateToken('admin'), forumController.adminArchivePost);
+router.patch('/admin/post/restore/:id', authenticateToken('admin'), forumController.adminRestorePost);
+router.patch('/admin/comment/restore/:id', authenticateToken('admin'), forumController.adminRestoreComment);
+
+router.delete('/admin/post/delete/:id', authenticateToken('admin'), forumController.deletePost);
+router.delete('/admin/comment/delete/:id', authenticateToken('admin'), forumController.deleteComment);
+
+router.get('/admin/posts', authenticateToken('admin'), forumController.adminGetAllPosts);
+router.get('/admin/posts/comments/:id', authenticateToken('admin'), forumController.adminGetAllComments);
 module.exports = router;

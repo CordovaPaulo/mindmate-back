@@ -8,17 +8,32 @@ const scheduleSchema = new mongoose.Schema({
             validator: function (arr) {
                 const sessionType = this.sessionType;
                 if (!Array.isArray(arr)) return false;
+                // one-on-one must have exactly one learner
                 if (sessionType === 'one-on-one') {
                     return arr.length === 1;
-                } else if (sessionType === 'group') {
-                    return arr.length >= 1;
+                }
+                // group sessions must have at least one learner and not exceed maxParticipants if set
+                if (sessionType === 'group') {
+                    if (arr.length < 1) return false;
+                    const max = this.maxParticipants;
+                    if (typeof max === 'number' && Number.isFinite(max)) {
+                        return arr.length <= Number(max);
+                    }
+                    return true;
                 }
                 return arr.length >= 1;
             },
             message: props => {
                 const st = props && props.instance && props.instance.sessionType;
+                const inst = props && props.instance;
                 if (st === 'one-on-one') return 'One-on-one sessions must have exactly one learner.';
-                if (st === 'group') return 'Group sessions must have one or more learners.';
+                if (st === 'group') {
+                    const max = inst && inst.maxParticipants;
+                    if (typeof max === 'number' && Number.isFinite(max)) {
+                        return `Group sessions must have between 1 and ${max} learners.`;
+                    }
+                    return 'Group sessions must have one or more learners.';
+                }
                 return 'At least one learner is required.';
             }
         }
@@ -38,10 +53,10 @@ const scheduleSchema = new mongoose.Schema({
         ref: 'Jitsi' 
     },
     
-    // // Optional: group session fields
-    // groupName: { type: String },
-    // maxParticipants: { type: Number },
-    // offerId: { type: String }
+    // Optional: group session fields
+    groupName: { type: String },
+    maxParticipants: { type: Number, min: 1 },
+    offerId: { type: String }
     
 }, { 
     timestamps: true,

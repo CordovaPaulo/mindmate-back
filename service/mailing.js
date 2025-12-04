@@ -26,9 +26,11 @@ const FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'gccoed@gmail.com';
  */
 const sendEmail = async (to, subject, html) => {
   try {
-    // console.log(`📧 [BREVO] Sending email to ${to}...`);
-    // console.log(`   From: ${FROM_EMAIL}`);
-    // console.log(`   Subject: ${subject}`);
+    console.log(`📧 [BREVO] Attempting to send email...`);
+    console.log(`   To: ${to}`);
+    console.log(`   From: ${FROM_EMAIL}`);
+    console.log(`   Subject: ${subject}`);
+    console.log(`   API Key configured: ${process.env.BREVO_API_KEY ? 'Yes (hidden)' : 'No - MISSING!'}`);
     
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.sender = { 
@@ -39,9 +41,12 @@ const sendEmail = async (to, subject, html) => {
     sendSmtpEmail.subject = subject;
     sendSmtpEmail.htmlContent = html;
 
+    console.log(`   Calling Brevo API...`);
     const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
 
-    console.log(`✅ [BREVO SUCCESS] Email sent. ID: ${data.messageId || data.body?.messageId || 'N/A'}`);
+    console.log(`✅ [BREVO SUCCESS] Email queued for delivery!`);
+    console.log(`   Message ID: ${data.messageId || data.body?.messageId || 'N/A'}`);
+    console.log(`   Check recipient spam/junk folder if not in inbox`);
 
     // Return data with proper structure
     return {
@@ -51,7 +56,8 @@ const sendEmail = async (to, subject, html) => {
   } catch (error) {
     console.error('❌ [BREVO ERROR] Failed to send email:', {
       error: error.message,
-      response: error.response?.body,
+      errorBody: error.response?.body,
+      statusCode: error.response?.status,
       to: to,
       subject: subject
     });
@@ -67,12 +73,14 @@ const mailing = {
       // Extract values from mailOptions (nodemailer format)
       const to = mailOptions.to;
       const subject = mailOptions.subject;
-      const html = mailOptions.html || `<p>${mailOptions.text.replace(/\n/g, '<br>')}</p>`;
+      const html = mailOptions.html || `<p>${(mailOptions.text || '').replace(/\n/g, '<br>')}</p>`;
 
-      // console.log(`[BREVO] Processing email request...`);
-      // console.log(`   To: ${to}`);
-      // console.log(`   From: ${FROM_EMAIL}`);
-      // console.log(`   Subject: ${subject}`);
+      console.log(`[BREVO] Processing email request...`);
+      console.log(`   To: ${to}`);
+      console.log(`   From: ${FROM_EMAIL}`);
+      console.log(`   Subject: ${subject}`);
+      console.log(`   Has HTML content: ${!!mailOptions.html}`);
+      console.log(`   Has text content: ${!!mailOptions.text}`);
       
       // Call the main sendEmail function
       const data = await sendEmail(to, subject, html);
@@ -87,6 +95,7 @@ const mailing = {
     } catch (error) {
       console.error('❌ [BREVO ERROR] sendMail wrapper failed:', {
         error: error.message,
+        errorBody: error.response?.body,
         to: mailOptions.to,
         subject: mailOptions.subject
       });

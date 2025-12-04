@@ -24,6 +24,8 @@ const roleRouter = require('./routes/role');
 const aiRouter = require('./routes/ai');
 const whiteboardRouter = require('./routes/whiteboard');
 const botpressRouter = require('./routes/botpress');
+const usermapRouter = require('./routes/user-map');
+const challengeRouter = require('./routes/challenge');
 
 const app = express();
 
@@ -81,6 +83,8 @@ app.use('/api/role', roleRouter);
 app.use('/ai', aiRouter);
 app.use('/api/whiteboard', whiteboardRouter);
 app.use('/api/botpress', botpressRouter);
+app.use('/api/learner/guide', usermapRouter);
+app.use('/api/challenge', challengeRouter);
 
 // 404 handler
 app.use((req, res, next) => {

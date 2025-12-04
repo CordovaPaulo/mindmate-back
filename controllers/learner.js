@@ -11,6 +11,9 @@ const uploadController = require('./upload');
 const calculateMatchScore = require('../utils/matchingUtils');
 const Rank = require('../models/rank'); // <-- added
 const Badge = require('../models/badges'); // added
+const presetSched = require('../models/presetSched');
+const progressService = require('../service/progress');
+const Specialization = require('../models/specializations');
 
 // Safe helper to resolve mentor and call awardMentorBadges without relying on userData variable
 async function safeAwardMentorBadgesByUserId(userOrMentorId) {
@@ -49,6 +52,44 @@ exports.getAllMentors = async (req, res) => {
       return res.status(404).json({ message: 'Learner not found', code: 404 });
     }
 
+    // Calculate learner progress for matching algorithm
+    let learnerProgress = null;
+    try {
+      const UserSkillProgress = require('../models/userSkillProgress');
+      const UserRoadmapProgress = require('../models/userRoadmapProgress');
+      
+      // Get all skill progress for this learner across their specializations
+      const skillProgresses = await UserSkillProgress.find({
+        userId: decoded.id,
+        specialization: { $in: learner.specialization || [] }
+      }).lean();
+      
+      // Calculate average skill level
+      let avgSkillLevel = 1;
+      if (skillProgresses && skillProgresses.length > 0) {
+        const totalLevel = skillProgresses.reduce((sum, sp) => sum + (sp.level || 1), 0);
+        avgSkillLevel = totalLevel / skillProgresses.length;
+      }
+      
+      // Get roadmap progress for learner's specializations
+      const roadmapProgresses = await UserRoadmapProgress.find({
+        userId: decoded.id,
+        specialization: { $in: learner.specialization || [] }
+      }).lean();
+      
+      // Calculate average roadmap completion
+      let roadmapCompletion = 0;
+      if (roadmapProgresses && roadmapProgresses.length > 0) {
+        const totalCompletion = roadmapProgresses.reduce((sum, rp) => sum + (rp.overallCompletion || 0), 0);
+        roadmapCompletion = totalCompletion / roadmapProgresses.length;
+      }
+      
+      learnerProgress = { avgSkillLevel, roadmapCompletion };
+    } catch (progressErr) {
+      console.error('Error calculating learner progress:', progressErr);
+      // Continue without progress data
+    }
+
     // dynamic import of ESM util (works in CommonJS file inside async function)
     let matchScores = null
     try {
@@ -77,7 +118,7 @@ exports.getAllMentors = async (req, res) => {
     const scored = mentors.map(m => {
       let score = 0;
       try {
-        score = calculateMatchScore(learner, m) ?? 0;
+        score = calculateMatchScore(learner, m, learnerProgress) ?? 0;
       } catch (scoreErr) {
         console.error('Error calculating score for mentor', String(m._id), scoreErr);
         score = 0;
@@ -114,7 +155,7 @@ exports.getAllMentors = async (req, res) => {
 exports.getMentorById = async (req, res) => {
   const { id } = req.params;
   try {
-    const mentor = await Mentor.findOne({ _id: id });
+    const mentor = await Mentor.findOne({ _id: id }).select('-subjects');
     if (!mentor) {
       return res.status(404).json({ message: 'Mentor not found', code: 404 });
     }
@@ -141,7 +182,10 @@ exports.getMentorById = async (req, res) => {
       definition: defs[b.badgeKey] || null
     }));
 
-    res.status(200).json({ mentor, badges });
+    // Fetch preset schedules created by this mentor
+    const presetSchedules = await presetSched.find({ mentor: mentor._id }).lean();
+
+    res.status(200).json({ mentor, badges, presetSchedules });
   } catch (error) {
     console.error('getMentorById error:', error);
     res.status(500).json({ message: 'Server error', code: 500 });
@@ -258,7 +302,7 @@ exports.setSchedule = async (req, res) => {
 
 exports.setFeedback = async (req, res) => {
     const { id } = req.params;
-    const { rating, comments } = req.body;
+    const { rating, comments, evaluation } = req.body;
     const decoded = getValuesFromToken(req);
 
     if (!decoded || !decoded.id) {
@@ -296,17 +340,55 @@ exports.setFeedback = async (req, res) => {
             return res.status(404).json({ message: 'Mentor not found', code: 404 });
         }
 
+        // Validate evaluation data if provided
+        let evaluationData = null;
+        if (evaluation && typeof evaluation === 'object') {
+            const validCategories = ['knowledge', 'pacing', 'communication', 'engagement', 
+                                    'feedbackQuality', 'professionalism', 'resources', 
+                                    'accessibility', 'learningOutcomes'];
+            
+            evaluationData = {};
+            
+            // Validate numeric ratings (1-5)
+            for (const cat of validCategories) {
+                if (evaluation[cat] !== undefined) {
+                    const val = Number(evaluation[cat]);
+                    if (Number.isNaN(val) || val < 1 || val > 5) {
+                        return res.status(400).json({ 
+                            message: `Invalid ${cat} rating. Must be between 1 and 5.`, 
+                            code: 400 
+                        });
+                    }
+                    evaluationData[cat] = val;
+                }
+            }
+            
+            // Store open-ended responses
+            if (evaluation.whatHelped !== undefined) {
+                evaluationData.whatHelped = String(evaluation.whatHelped).trim();
+            }
+            if (evaluation.suggestions !== undefined) {
+                evaluationData.suggestions = String(evaluation.suggestions).trim();
+            }
+        }
+
         // create feedback
         const feedback = new Feedback({
             learner: learnerDoc._id,
             mentor: sched.mentor,
             schedule: sched._id,
             rating,
-            comments
+            comments,
+            evaluation: evaluationData
         });
 
-        // update average rating (simple average; adjust as needed)
-        const newRating = mentor.aveRating ? (mentor.aveRating + rating) / 2 : rating;
+        // Calculate mentor rating based on evaluation if available, else use simple rating
+        let effectiveRating = rating;
+        if (evaluationData && evaluationData.categoryAverage) {
+            effectiveRating = evaluationData.categoryAverage;
+        }
+        
+        const newRating = mentor.aveRating ? (mentor.aveRating + effectiveRating) / 2 : effectiveRating;
         mentor.aveRating = newRating;
 
         await feedback.save();
@@ -331,6 +413,44 @@ exports.setFeedback = async (req, res) => {
           }
         } catch (rankErr) {
           console.error('Error updating learner rank:', rankErr);
+        }
+
+        // Update skill progress for completed schedule
+        try {
+          const learnerSpecs = Array.isArray(learnerDoc.specialization) ? learnerDoc.specialization : [];
+          if (learnerSpecs.length > 0 && sched.subject) {
+            // Fetch specializations that match learner's specializations
+            const specs = await Specialization.find({ specialization: { $in: learnerSpecs } }).lean();
+            
+            const subjectLower = String(sched.subject).toLowerCase();
+            
+            // Try to find if any skill name is included in the schedule subject
+            for (const spec of specs) {
+              const skillmap = spec.skillmap || [];
+              // Check if any skill name appears within the subject (e.g., "JavaScript" in "Advanced JavaScript")
+              const matchingSkill = skillmap.find(skill => {
+                const skillLower = String(skill).toLowerCase();
+                // Check if skill is contained in subject name
+                return subjectLower.includes(skillLower);
+              });
+              
+              if (matchingSkill) {
+                // Award progress for completing this schedule
+                await progressService.addProgress({
+                  userId: learnerDoc._id,
+                  specialization: spec.specialization,
+                  skill: matchingSkill,
+                  delta: 100, // Base XP for completing a schedule
+                  source: 'schedule_completion',
+                  sourceId: sched._id,
+                  note: `Completed schedule: ${sched.subject} on ${sched.date}`
+                });
+                console.log(`[Progress] Updated skill "${matchingSkill}" for learner ${learnerDoc._id} (+100 XP)`);
+              }
+            }
+          }
+        } catch (progressErr) {
+          console.error('Error updating learner skill progress:', progressErr);
         }
 
         // Pusher: notify new feedback
@@ -801,6 +921,13 @@ exports.acceptOffer = async (req, res) => {
     }
 
     if (isGroupOffer) {
+      // Validate incoming maxParticipants if provided
+      if (payload.maxParticipants !== undefined && payload.maxParticipants !== null) {
+        const mp = Number(payload.maxParticipants);
+        if (!Number.isFinite(mp) || mp < 1) {
+          return res.status(400).json({ message: 'Invalid maxParticipants value in offer', code: 400 });
+        }
+      }
       // If payload references a specific scheduleId, join that schedule directly
       if (payload.scheduleId) {
         const groupSchedule = await Schedule.findById(payload.scheduleId);
@@ -814,9 +941,10 @@ exports.acceptOffer = async (req, res) => {
           return res.status(409).json({ message: 'You already joined this group session', schedule: groupSchedule, code: 409 });
         }
 
-        // enforce maxParticipants if present on schedule
-        const max = groupSchedule.maxParticipants || payload.maxParticipants;
-        if (max && Array.isArray(groupSchedule.learners) && groupSchedule.learners.length >= Number(max)) {
+        // enforce maxParticipants if present on schedule or payload (explicit null check)
+        const maxFromSchedule = (groupSchedule.maxParticipants !== undefined && groupSchedule.maxParticipants !== null) ? Number(groupSchedule.maxParticipants) : null;
+        const max = (maxFromSchedule !== null && Number.isFinite(maxFromSchedule)) ? maxFromSchedule : (payload.maxParticipants !== undefined && payload.maxParticipants !== null ? Number(payload.maxParticipants) : null);
+        if (max !== null && Array.isArray(groupSchedule.learners) && groupSchedule.learners.length >= Number(max)) {
           return res.status(409).json({ message: 'Group session is full', code: 409 });
         }
 
@@ -884,9 +1012,10 @@ MindMate Team`
           return res.status(409).json({ message: 'You already joined this group session', schedule: groupSchedule, code: 409 });
         }
 
-        // enforce maxParticipants if present on schedule or payload
-        const max = groupSchedule.maxParticipants || payload.maxParticipants;
-        if (max && Array.isArray(groupSchedule.learners) && groupSchedule.learners.length >= Number(max)) {
+        // enforce maxParticipants if present on schedule or payload (explicit null check)
+        const maxFromSchedule = (groupSchedule.maxParticipants !== undefined && groupSchedule.maxParticipants !== null) ? Number(groupSchedule.maxParticipants) : null;
+        const max = (maxFromSchedule !== null && Number.isFinite(maxFromSchedule)) ? maxFromSchedule : (payload.maxParticipants !== undefined && payload.maxParticipants !== null ? Number(payload.maxParticipants) : null);
+        if (max !== null && Array.isArray(groupSchedule.learners) && groupSchedule.learners.length >= Number(max)) {
           return res.status(409).json({ message: 'Group session is full', code: 409 });
         }
 
@@ -1318,5 +1447,161 @@ exports.editProfile = async (req, res) => {
       }
       
       return res.status(500).json({ message: 'Internal server error', code: 500 });
+  }
+}
+
+// exports.getPresetSchedules = async (req, res) => {
+//   const decoded = getValuesFromToken(req);
+//   const { mentid } = req.params;
+//   if (!decoded?.id) {
+//     return res.status(403).json({ message: 'Invalid token', code: 403 });
+//   }
+
+//   try {
+//     const learner = await Learner.findOne({
+//       $or: [{ _id: decoded.id }, { userId: decoded.id }]
+//     });
+
+//     if (!learner) {
+//       return res.status(404).json({ message: 'Learner not found', code: 404 });
+//     }
+
+//     const scheds = await presetSched.find({
+//       mentor: mentid,
+//       course: learner.program,
+//       specialization: { $in: learner.specialization || [] }
+//     }).lean();
+    
+//     return res.status(200).json({ schedules: scheds, code: 200 });
+//   } catch (error) {
+//     console.error('getPresetSchedules error:', error);
+//     return res.status(500).json({ message: error.message, code: 500 });
+//   }
+// }
+
+exports.joinPresetSchedule = async (req, res) => {
+  const { presetId } = req.params;
+  const decoded = getValuesFromToken(req);
+  if (!decoded?.id) {
+    return res.status(403).json({ message: 'Invalid token', code: 403 });
+  }
+
+  try {
+    const sched = await presetSched.findOne({_id: presetId});
+    if (!sched) {
+      return res.status(404).json({ message: 'Preset schedule not found', code: 404 });
+    }
+
+    const learner = await Learner.findOne({
+      $or: [{ _id: decoded.id }, { userId: decoded.id }]
+    });
+    if (!learner) {
+      return res.status(404).json({ message: 'Learner not found', code: 404 });
+    }
+
+    // Validate learner's specialization matches preset schedule's specialization
+    if (!learner.specialization || !learner.specialization.includes(sched.specialization)) {
+      return res.status(403).json({ 
+        message: `You can only join preset schedules matching your specializations. This schedule requires: ${sched.specialization}`, 
+        code: 403 
+      });
+    }
+
+    // Validate learner's course matches preset schedule's course
+    if (learner.program !== sched.course) {
+      return res.status(403).json({ 
+        message: `You can only join preset schedules matching your program. This schedule is for: ${sched.course}`, 
+        code: 403 
+      });
+    }
+
+    // check if learner already joined
+    const alreadyJoined = Array.isArray(sched.participants) && sched.participants.some(l => String(l) === String(learner._id));
+    if (alreadyJoined) {
+      return res.status(409).json({ message: 'You already joined this preset schedule', schedule: sched, code: 409 });
+    }
+
+    sched.participants = sched.participants || [];
+    sched.participants.push(learner._id);
+    await sched.save();
+
+    return res.status(200).json({ message: 'Successfully joined preset schedule', schedule: sched, code: 200 });
+
+  } catch (error) {
+    console.error('joinPresetSchedule error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
+  }
+}
+
+exports.quitPresetSchedule = async (req, res) => {
+  const { presetId } = req.params;
+  const decoded = getValuesFromToken(req);
+  if (!decoded?.id) {
+    return res.status(403).json({ message: 'Invalid token', code: 403 });
+  }
+
+  try {
+    const sched = await presetSched.findOne({_id: presetId});
+    if (!sched) {
+      return res.status(404).json({ message: 'Preset schedule not found', code: 404 });
+    }
+    const learner = await Learner.findOne({
+      $or: [{ _id: decoded.id }, { userId: decoded.id }]
+    });
+
+    if (!learner) {
+      return res.status(404).json({ message: 'Learner not found', code: 404 });
+    }
+
+    // check if learner is in participants
+    const index = Array.isArray(sched.participants) ? sched.participants.findIndex(l => String(l) === String(learner._id)) : -1;
+    if (index === -1) {
+      return res.status(409).json({ message: 'You are not part of this preset schedule', schedule: sched, code: 409 });
+    }
+
+    sched.participants.splice(index, 1);
+    await sched.save();
+    return res.status(200).json({ message: 'Successfully quit preset schedule', schedule: sched, code: 200 });
+  } catch (error) {
+    console.error('quitPresetSchedule error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
+  }
+}
+
+exports.getSubjectsBySpecializations = async (req, res) => {
+  try {
+    const { specializations } = req.query;
+    
+    if (!specializations) {
+      return res.status(400).json({ message: 'Specializations parameter is required', code: 400 });
+    }
+
+    // Parse specializations (can be comma-separated string or JSON array)
+    let specializationList;
+    if (typeof specializations === 'string') {
+      try {
+        specializationList = JSON.parse(specializations);
+      } catch {
+        specializationList = specializations.split(',').map(s => s.trim());
+      }
+    } else {
+      specializationList = specializations;
+    }
+
+    if (!Array.isArray(specializationList) || specializationList.length === 0) {
+      return res.status(400).json({ message: 'Invalid specializations format', code: 400 });
+    }
+
+    const Subject = require('../models/Subject');
+    
+    // Find all subjects matching the specializations
+    const subjects = await Subject.find({
+      specialization: { $in: specializationList }
+    }).lean();
+
+    return res.status(200).json({ subjects });
+  } catch (error) {
+    console.error('getSubjectsBySpecializations error:', error);
+    return res.status(500).json({ message: error.message, code: 500 });
   }
 }
